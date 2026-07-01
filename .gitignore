@@ -1,0 +1,47 @@
+# dependencies
+node_modules
+.pnpm-store
+
+# build
+dist
+.next
+out
+target
+*.tsbuildinfo
+
+# env / secrets
+.env
+.env.*
+!.env.example
+.doppler
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+coverage
+playwright-report
+test-results
+
+# Tauri
+apps/desktop/src-tauri/gen
+
+# Supabase
+.supabase
+
+# misc
+.turbo
+*.local
+.local
+.vercel

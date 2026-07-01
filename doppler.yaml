@@ -1,0 +1,24 @@
+setup:
+  project: sniffoutpro
+  config: dev
+
+# Doppler project stub — create in dashboard:
+#   doppler projects create sniffoutpro
+#   doppler configs create dev --project sniffoutpro
+#   doppler configs create prd --project sniffoutpro
+#
+# Required secrets (all configs):
+#   DATABASE_URL
+#   SNIFFOUT_SYNC_TOKEN      # web API — must match VITE_SYNC_TOKEN on desktop
+#   SNIFFOUT_TIER            # PERSONAL | WORKSTATION | CONSULTANT | ADMIN
+#
+# Optional (auth + jobs):
+#   SUPABASE_URL
+#   SUPABASE_ANON_KEY
+#   SUPABASE_SERVICE_ROLE_KEY
+#   INNGEST_EVENT_KEY
+#   INNGEST_SIGNING_KEY
+#
+# Desktop build-only (Doppler prd or CI — not loaded by web):
+#   VITE_WEB_URL
+#   VITE_SYNC_TOKEN          # same value as SNIFFOUT_SYNC_TOKEN

@@ -1,0 +1,8 @@
+node_modules
+dist
+.next
+target
+coverage
+pnpm-lock.yaml
+.turbo
+supabase/.temp

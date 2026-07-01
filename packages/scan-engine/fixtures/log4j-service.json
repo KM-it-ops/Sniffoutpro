@@ -1,0 +1,27 @@
+{
+  "service": {
+    "product": "Apache Log4j",
+    "version": "2.14.1",
+    "port": 8080,
+    "protocol": "tcp"
+  },
+  "cveEntries": [
+    {
+      "id": "CVE-2021-44228",
+      "description": "Apache Log4j2 JNDI features do not protect against attacker controlled LDAP and other JNDI related endpoints.",
+      "cvssScore": 10.0,
+      "affectedProducts": [
+        { "product": "log4j", "vendor": "apache", "versionStart": "2.0", "versionEnd": "2.14.1" },
+        { "product": "Apache Log4j", "vendor": "apache", "versionStart": "2.0", "versionEnd": "2.14.1" }
+      ]
+    },
+    {
+      "id": "CVE-2021-45046",
+      "description": "Apache Log4j2 thread context lookup pattern vulnerable to denial of service.",
+      "cvssScore": 9.0,
+      "affectedProducts": [
+        { "product": "log4j", "vendor": "apache", "versionStart": "2.0", "versionEnd": "2.15.0" }
+      ]
+    }
+  ]
+}
