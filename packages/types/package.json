@@ -1,0 +1,33 @@
+{
+  "name": "@sniffoutpro/types",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./tiers": {
+      "types": "./dist/tiers.d.ts",
+      "default": "./dist/tiers.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@total-typescript/ts-reset": "^0.6.1",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@sniffoutpro/config": "workspace:*",
+    "eslint": "^9.24.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.1"
+  }
+}

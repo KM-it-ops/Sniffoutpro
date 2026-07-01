@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nmaprun scanner="nmap" args="nmap -sV -O 127.0.0.1" start="1710000000" version="7.94" xmloutputversion="1.05">
+  <host starttime="1710000001" endtime="1710000010">
+    <status state="up" reason="localhost-response" reason_ttl="0"/>
+    <address addr="127.0.0.1" addrtype="ipv4"/>
+    <hostnames>
+      <hostname name="localhost" type="PTR"/>
+    </hostnames>
+    <ports>
+      <port protocol="tcp" portid="22">
+        <state state="open" reason="syn-ack" reason_ttl="64"/>
+        <service name="ssh" product="OpenSSH" version="8.9p1" method="probed" conf="10"/>
+      </port>
+      <port protocol="tcp" portid="8080">
+        <state state="open" reason="syn-ack" reason_ttl="64"/>
+        <service name="http-proxy" product="Apache Log4j" version="2.14.1" method="probed" conf="10"/>
+      </port>
+    </ports>
+    <os>
+      <osmatch name="Linux 5.4" accuracy="95" line="12345"/>
+    </os>
+  </host>
+  <host starttime="1710000011" endtime="1710000020">
+    <status state="up" reason="arp-response" reason_ttl="0"/>
+    <address addr="192.168.1.10" addrtype="ipv4"/>
+    <address addr="AA:BB:CC:DD:EE:FF" addrtype="mac"/>
+    <ports>
+      <port protocol="tcp" portid="443">
+        <state state="open" reason="syn-ack" reason_ttl="64"/>
+        <service name="https" product="nginx" version="1.18.0" method="probed" conf="10"/>
+      </port>
+    </ports>
+  </host>
+  <host starttime="1710000021" endtime="1710000030">
+    <status state="up" reason="echo-reply" reason_ttl="64"/>
+    <address addr="192.168.1.20" addrtype="ipv4"/>
+    <hostnames>
+      <hostname name="lab-db.internal" type="PTR"/>
+    </hostnames>
+    <ports>
+      <port protocol="tcp" portid="5432">
+        <state state="open" reason="syn-ack" reason_ttl="64"/>
+        <service name="postgresql" product="PostgreSQL" version="15.2" method="probed" conf="10"/>
+      </port>
+    </ports>
+  </host>
+</nmaprun>
