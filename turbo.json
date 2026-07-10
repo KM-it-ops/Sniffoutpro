@@ -5,14 +5,20 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**", "dist/**", "target/**"],
-      "env": ["DATABASE_URL", "SNIFFOUT_SYNC_TOKEN", "SNIFFOUT_TIER", "SUPABASE_URL", "SUPABASE_ANON_KEY"]
+      "env": [
+        "DATABASE_URL",
+        "SNIFFOUT_SYNC_TOKEN",
+        "SNIFFOUT_TIER",
+        "SUPABASE_URL",
+        "SUPABASE_ANON_KEY"
+      ]
     },
     "dev": {
       "cache": false,
       "persistent": true
     },
     "lint": {
-      "dependsOn": ["^lint"]
+      "dependsOn": ["^build", "^lint"]
     },
     "typecheck": {
       "dependsOn": ["^build", "^typecheck"]
