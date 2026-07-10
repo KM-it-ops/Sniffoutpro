@@ -20,7 +20,10 @@ export const ServiceSchema = z.object({
 export type Service = z.infer<typeof ServiceSchema>;
 
 export const HostSchema = z.object({
-  ip: z.string().ip({ version: 'v4' }).or(z.string().ip({ version: 'v6' })),
+  ip: z
+    .string()
+    .ip({ version: 'v4' })
+    .or(z.string().ip({ version: 'v6' })),
   hostname: z.string().optional(),
   mac: z.string().optional(),
   os: z.string().optional(),
@@ -44,6 +47,9 @@ export const FindingSchema = z.object({
 
 export type Finding = z.infer<typeof FindingSchema>;
 
+export const ScanProvenanceEnum = z.enum(['live', 'fixture']);
+export type ScanProvenance = z.infer<typeof ScanProvenanceEnum>;
+
 export const ScanRunSchema = z.object({
   id: z.string().uuid(),
   status: ScanStatusEnum,
@@ -53,6 +59,8 @@ export const ScanRunSchema = z.object({
   completedAt: z.string().datetime().optional(),
   hosts: z.array(HostSchema),
   findings: z.array(FindingSchema),
+  /** Provenance so fixture data is never mistaken for live findings. */
+  source: ScanProvenanceEnum.optional(),
 });
 
 export type ScanRun = z.infer<typeof ScanRunSchema>;

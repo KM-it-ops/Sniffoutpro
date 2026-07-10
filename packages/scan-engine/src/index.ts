@@ -3,6 +3,7 @@ export * from './errors.js';
 export { parseNmapXml } from './nmap/parse-xml.js';
 export {
   correlateCves,
+  compareVersions,
   hostsToServiceContexts,
   type CveCacheEntry,
   type CveAffectedProduct,
@@ -10,3 +11,8 @@ export {
 } from './cve/correlate.js';
 export { scoreRisk, type RiskInput } from './risk/score.js';
 export { diffScanRuns, type ScanDiffSummary } from './diff/scan-diff.js';
+export {
+  validateScanScope,
+  type ScopeValidationOptions,
+  type ScopeValidationOk,
+} from './scope/validate-scan-scope.js';

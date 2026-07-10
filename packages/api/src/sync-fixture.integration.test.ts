@@ -46,6 +46,7 @@ function buildFixtureScanRun(): ScanRun {
     completedAt: startedAt,
     hosts: parsed.value,
     findings: findings.value,
+    source: 'fixture',
   };
 }
 
@@ -68,10 +69,10 @@ describe('fixture scan cloud sync', () => {
     await db.close();
   });
 
-  it('syncs lab fixture with 3 hosts and Log4j finding to Postgres', async () => {
+  it('syncs lab fixture with 3 hosts and Log4j finding to Postgres', async (ctx) => {
     if (!dbAvailable) {
-      console.warn('Skipping fixture sync test — Postgres not reachable');
-      return;
+      // Report as skipped (not passed) so a missing local stack is visible in CI.
+      ctx.skip();
     }
 
     const scanRun = buildFixtureScanRun();
@@ -93,6 +94,8 @@ describe('fixture scan cloud sync', () => {
     const detail = await caller.scans.getDetail({ id: scanRun.id });
     expect(detail?.scan.hosts.length).toBeGreaterThanOrEqual(3);
     expect(detail?.scan.findings.some((f) => f.cveId === 'CVE-2021-44228')).toBe(true);
+    // C3: fixture provenance must survive the cloud sync round-trip.
+    expect(detail?.scan.source).toBe('fixture');
 
     const list = await caller.scans.list({ limit: 50 });
     expect(list.some((row) => row.id === scanRun.id)).toBe(true);

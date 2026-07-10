@@ -52,6 +52,14 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo run test
+      - name: Coverage thresholds (scan-engine)
+        run: pnpm --filter @sniffoutpro/scan-engine test:coverage -- --coverage.thresholds.lines=85 --coverage.thresholds.branches=80
+      - name: Install Playwright browsers
+        run: pnpm --filter @sniffoutpro/web exec playwright install --with-deps chromium
+      - name: Playwright e2e
+        run: pnpm --filter @sniffoutpro/web test:e2e
+        env:
+          CI: true
 
   boundaries:
     runs-on: ubuntu-latest
@@ -65,7 +73,25 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo run lint --filter=@sniffoutpro/config --filter=@sniffoutpro/types
+      # Enforce apps → packages only across the monorepo (ADR-001 / §3.3)
+      - run: pnpm turbo run lint --filter=@sniffoutpro/config --filter=@sniffoutpro/types --filter=@sniffoutpro/web --filter=@sniffoutpro/desktop --filter=@sniffoutpro/api --filter=@sniffoutpro/scan-engine --filter=@sniffoutpro/db --filter=@sniffoutpro/ui
+
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/desktop/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: cargo fmt
+        run: cargo fmt --check
+      - name: cargo clippy
+        run: cargo clippy -- -D warnings
+      - name: cargo test
+        run: cargo test
 
   audit:
     runs-on: ubuntu-latest

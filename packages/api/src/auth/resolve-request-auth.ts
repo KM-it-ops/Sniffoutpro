@@ -1,7 +1,13 @@
+import { timingSafeEqual } from 'node:crypto';
+
 export type ResolvedAuth = {
   userId: string | null;
   syncAuthorized: boolean;
 };
+
+function isProductionRuntime(): boolean {
+  return process.env['VERCEL'] === '1' || process.env['NODE_ENV'] === 'production';
+}
 
 function readBearerToken(req: Request): string | null {
   const authHeader = req.headers.get('authorization');
@@ -10,6 +16,16 @@ function readBearerToken(req: Request): string | null {
   }
   const token = authHeader.slice('Bearer '.length).trim();
   return token.length > 0 ? token : null;
+}
+
+function tokensEqual(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a);
+  const bBuf = Buffer.from(b);
+  if (aBuf.length !== bBuf.length) {
+    timingSafeEqual(aBuf, aBuf);
+    return false;
+  }
+  return timingSafeEqual(aBuf, bBuf);
 }
 
 async function resolveSupabaseUserId(bearer: string): Promise<string | null> {
@@ -45,11 +61,19 @@ export async function resolveRequestAuth(req: Request): Promise<ResolvedAuth> {
   }
 
   const syncToken = process.env['SNIFFOUT_SYNC_TOKEN'];
+  const tokenConfigured = syncToken !== undefined && syncToken !== '';
+  const bearerMatchesToken = bearer !== null && tokenConfigured && tokensEqual(bearer, syncToken);
+
+  // Production must fail closed: missing/empty sync token is NOT open access.
+  if (isProductionRuntime() && !tokenConfigured && userId === null) {
+    console.error(
+      '[auth] SNIFFOUT_SYNC_TOKEN is unset/empty in production — syncAuthorized=false (fail-closed)',
+    );
+    return { userId, syncAuthorized: false };
+  }
+
   const syncAuthorized =
-    syncToken === undefined ||
-    syncToken === '' ||
-    userId !== null ||
-    (bearer !== null && bearer === syncToken);
+    userId !== null || bearerMatchesToken || (!isProductionRuntime() && !tokenConfigured);
 
   return { userId, syncAuthorized };
 }

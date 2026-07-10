@@ -70,3 +70,8 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           pnpm dlx vercel deploy --prod --yes --token "$VERCEL_TOKEN"
+      - name: Post-deploy smoke (verify-production)
+        env:
+          SNIFFOUT_SYNC_TOKEN: ${{ secrets.SNIFFOUT_SYNC_TOKEN }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL || 'https://sniffoutpro-web.vercel.app' }}
+        run: node scripts/verify-production.mjs "$PRODUCTION_URL" "$SNIFFOUT_SYNC_TOKEN"
