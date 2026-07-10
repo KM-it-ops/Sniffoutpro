@@ -10,5 +10,8 @@ export {
   sqliteServices,
   type LocalDatabase,
 } from './sqlite-client.js';
-export * as sqliteSchema from './schema/sqlite.js';
+// import-then-export instead of `export * as` — Playwright's babel transform
+// cannot parse `export * as ns from` in transpiled workspace dist output.
+import * as sqliteSchema from './schema/sqlite.js';
+export { sqliteSchema };
 export * from './zod.js';
