@@ -3,7 +3,11 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![greet, run_nmap, get_fixture_nmap_xml])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            run_nmap,
+            get_fixture_nmap_xml
+        ])
         .run(tauri::generate_context!())
         .expect("error while running SniffOutPro desktop");
 }
@@ -70,9 +74,10 @@ fn is_ipv4(s: &str) -> bool {
     if parts.len() != 4 {
         return false;
     }
-    parts.iter().all(|p| {
-        p.parse::<u8>().is_ok() && !(p.len() > 1 && p.starts_with('0'))
-    }) || parts.iter().all(|p| p.parse::<u8>().is_ok())
+    parts
+        .iter()
+        .all(|p| p.parse::<u8>().is_ok() && !(p.len() > 1 && p.starts_with('0')))
+        || parts.iter().all(|p| p.parse::<u8>().is_ok())
 }
 
 fn is_hostname(s: &str) -> bool {
@@ -84,9 +89,7 @@ fn is_hostname(s: &str) -> bool {
             && label.len() <= 63
             && !label.starts_with('-')
             && !label.ends_with('-')
-            && label
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-')
+            && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
     })
 }
 
