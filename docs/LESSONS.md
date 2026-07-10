@@ -27,6 +27,16 @@ One entry per confirmed correction. Update in place; don't duplicate.
   Residual NITs (cosmetic): snapshot records `nulls: "last"` for
   `scan_runs_started_at_idx` vs plain `DESC` in SQL (column is NOT NULL, no
   behavioral difference); journal `when` for 0001 is a hand-rounded timestamp.
+- **Desktop bundling: keep Node-only clients out of the browser graph.**
+  `@sniffoutpro/db`'s root export pulls the `postgres` client into the desktop
+  vite build, which rollup cannot bundle (pre-existing breakage — the
+  VERIFY-FIX loop never gated on `build`). Fixed with a vite alias to a
+  throwing stub (`postgres-browser-stub.ts`); the durable fix is splitting the
+  db package's exports so desktop imports only the sqlite subpath. `build` is
+  now part of the verify gate.
+- **Rust/Tauri glib alert (GHSA, glib <0.20) is not locally fixable.** glib
+  0.18.5 is pinned by Tauri 2's GTK stack; Linux-only code path. Revisit on
+  the next Tauri minor that bumps gtk-rs.
 - **Provenance is client-asserted.** `scanRun.source` is a labeling aid, not
   an integrity signal; `undefined` means UNVERIFIED — never default to
   'live'. Deferred follow-ups: `scan_runs.source` Postgres column (needs

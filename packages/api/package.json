@@ -25,7 +25,7 @@
     "@sniffoutpro/scan-engine": "workspace:*",
     "@sniffoutpro/types": "workspace:*",
     "@trpc/server": "^11.1.0",
-    "drizzle-orm": "^0.41.0",
+    "drizzle-orm": "^0.45.2",
     "neverthrow": "^8.2.0",
     "pino": "^9.6.0",
     "superjson": "^2.2.2",

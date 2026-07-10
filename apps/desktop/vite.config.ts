@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
@@ -20,5 +21,10 @@ export default defineConfig({
   },
   resolve: {
     dedupe: ['react', 'react-dom'],
+    alias: {
+      // See src/lib/postgres-browser-stub.ts — the Node-only postgres client
+      // enters the graph via @sniffoutpro/db's root export but is never used.
+      postgres: fileURLToPath(new URL('./src/lib/postgres-browser-stub.ts', import.meta.url)),
+    },
   },
 });

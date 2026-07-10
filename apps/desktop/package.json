@@ -21,7 +21,7 @@
     "@tauri-apps/api": "^2.5.0",
     "@tauri-apps/plugin-fs": "^2.2.1",
     "@trpc/client": "^11.1.0",
-    "drizzle-orm": "^0.41.0",
+    "drizzle-orm": "^0.45.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "sql.js": "^1.13.0",
