@@ -55,4 +55,5 @@ export const sqliteFindings = sqliteTable('findings', {
   cvssScore: real('cvss_score'),
   riskScore: real('risk_score').notNull(),
   description: text('description'),
+  port: integer('port'),
 });

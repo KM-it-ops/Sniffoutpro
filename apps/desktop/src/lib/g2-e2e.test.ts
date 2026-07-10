@@ -9,12 +9,7 @@ import {
   LOG4J_CVE_FIXTURE,
   parseNmapXml,
 } from '@sniffoutpro/scan-engine';
-import {
-  eq,
-  sqliteFindings,
-  sqliteHosts,
-  sqliteScanRuns,
-} from '@sniffoutpro/db';
+import { eq, sqliteFindings, sqliteHosts, sqliteScanRuns } from '@sniffoutpro/db';
 import { createLocalDb } from './local-db';
 
 if (typeof globalThis.Buffer === 'undefined') {
@@ -48,44 +43,51 @@ describe('G2 fixture scan E2E (parse → correlate → SQLite)', () => {
     const scopeId = crypto.randomUUID();
     const startedAt = new Date().toISOString();
 
-    db.insert(sqliteScanRuns).values({
-      id: scanId,
-      authorizationScopeId: scopeId,
-      status: 'completed',
-      targets: ['127.0.0.1'],
-      intensity: 'light',
-      startedAt,
-      completedAt: startedAt,
-      rawOutput: xml,
-      normalizedOutput: JSON.stringify({ hosts, findings: findings.value }),
-    }).run();
+    db.insert(sqliteScanRuns)
+      .values({
+        id: scanId,
+        authorizationScopeId: scopeId,
+        status: 'completed',
+        targets: ['127.0.0.1'],
+        intensity: 'light',
+        startedAt,
+        completedAt: startedAt,
+        rawOutput: xml,
+        normalizedOutput: JSON.stringify({ hosts, findings: findings.value }),
+      })
+      .run();
 
     for (const host of hosts) {
       const hostId = crypto.randomUUID();
-      db.insert(sqliteHosts).values({
-        id: hostId,
-        scanRunId: scanId,
-        ip: host.ip,
-        hostname: host.hostname ?? null,
-        mac: host.mac ?? null,
-        os: host.os ?? null,
-        osConfidence: host.osConfidence ?? null,
-      }).run();
+      db.insert(sqliteHosts)
+        .values({
+          id: hostId,
+          scanRunId: scanId,
+          ip: host.ip,
+          hostname: host.hostname ?? null,
+          mac: host.mac ?? null,
+          os: host.os ?? null,
+          osConfidence: host.osConfidence ?? null,
+        })
+        .run();
     }
 
     for (const finding of findings.value) {
-      db.insert(sqliteFindings).values({
-        id: finding.id,
-        scanRunId: scanId,
-        hostId: null,
-        serviceId: null,
-        cveId: finding.cveId ?? null,
-        title: finding.title,
-        severity: finding.severity,
-        cvssScore: finding.cvssScore ?? null,
-        riskScore: finding.riskScore,
-        description: finding.description ?? null,
-      }).run();
+      db.insert(sqliteFindings)
+        .values({
+          id: finding.id,
+          scanRunId: scanId,
+          hostId: null,
+          serviceId: null,
+          cveId: finding.cveId ?? null,
+          title: finding.title,
+          severity: finding.severity,
+          cvssScore: finding.cvssScore ?? null,
+          riskScore: finding.riskScore,
+          description: finding.description ?? null,
+          port: finding.port ?? null,
+        })
+        .run();
     }
 
     const hostRows = db.select().from(sqliteHosts).where(eq(sqliteHosts.scanRunId, scanId)).all();

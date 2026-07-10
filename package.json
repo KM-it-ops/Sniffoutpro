@@ -21,11 +21,25 @@
   "devDependencies": {
     "@commitlint/cli": "^19.8.0",
     "@commitlint/config-conventional": "^19.8.0",
+    "@sniffoutpro/config": "workspace:*",
+    "eslint": "^9.24.0",
     "husky": "^9.1.7",
     "lint-staged": "^15.5.0",
     "next": "^15.3.1",
     "prettier": "^3.5.3",
     "turbo": "^2.5.0",
     "typescript": "^5.8.3"
+  },
+  "pnpm": {
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "react": "19",
+        "react-dom": "19"
+      },
+      "ignoreMissing": [
+        "react",
+        "react-dom"
+      ]
+    }
   }
 }

@@ -10,7 +10,15 @@ import {
   services,
 } from '@sniffoutpro/db/schema';
 import { diffScanRuns } from '@sniffoutpro/scan-engine';
-import { FindingSchema, HostSchema, ScanRunSchema, type ScanRun } from '@sniffoutpro/types';
+import {
+  FindingSchema,
+  HostSchema,
+  ScanProvenanceEnum,
+  ScanRunSchema,
+  type ScanProvenance,
+  type ScanRun,
+} from '@sniffoutpro/types';
+import { assertRateLimit } from '../rate-limit.js';
 import { router, publicProcedure, syncProcedure } from '../trpc.js';
 
 const SyncScanInputSchema = z.object({
@@ -18,6 +26,37 @@ const SyncScanInputSchema = z.object({
   scanRun: ScanRunSchema,
   rawOutput: z.string().optional(),
 });
+
+/**
+ * C3 (docs/AUDIT-RESIDUAL-2026-07-09.md): persist fixture provenance through
+ * cloud sync so fixture data is never mistaken for live findings.
+ *
+ * Trust boundary: `source` is client-asserted (shape-validated by
+ * ScanRunSchema, origin unverified) — a labeling aid, not an integrity signal.
+ */
+export function toNormalizedOutput(scanRun: ScanRun): {
+  hosts: ScanRun['hosts'];
+  findings: ScanRun['findings'];
+  source?: ScanProvenance;
+} {
+  return {
+    hosts: scanRun.hosts,
+    findings: scanRun.findings,
+    ...(scanRun.source !== undefined ? { source: scanRun.source } : {}),
+  };
+}
+
+const ProvenanceProbeSchema = z.object({ source: ScanProvenanceEnum });
+
+/**
+ * Extract scan provenance from a stored `normalized_output` jsonb payload.
+ * Returns `undefined` for legacy or malformed payloads — treat `undefined`
+ * as UNVERIFIED provenance; never default it to 'live'.
+ */
+export function provenanceFromNormalizedOutput(value: unknown): ScanProvenance | undefined {
+  const parsed = ProvenanceProbeSchema.safeParse(value);
+  return parsed.success ? parsed.data.source : undefined;
+}
 
 async function loadScanDetail(db: Database, id: string): Promise<{ scan: ScanRun } | null> {
   const [run] = await db.select().from(scanRuns).where(eq(scanRuns.id, id)).limit(1);
@@ -68,7 +107,7 @@ async function loadScanDetail(db: Database, id: string): Promise<{ scan: ScanRun
       cvssScore: f.cvssScore ?? undefined,
       riskScore: f.riskScore,
       hostIp: f.hostId !== null ? (hostIpById.get(f.hostId) ?? 'unknown') : 'unknown',
-      port: undefined,
+      port: f.port ?? undefined,
       description: f.description ?? undefined,
     }),
   );
@@ -83,6 +122,7 @@ async function loadScanDetail(db: Database, id: string): Promise<{ scan: ScanRun
       completedAt: run.completedAt?.toISOString(),
       hosts: mappedHosts,
       findings: mappedFindings,
+      source: provenanceFromNormalizedOutput(run.normalizedOutput),
     }),
   };
 }
@@ -97,6 +137,12 @@ export const scansRouter = router({
         .optional(),
     )
     .query(async ({ ctx, input }) => {
+      // Single-tenant v1: public reads allowed with rate limit until Phase 4 auth lockdown.
+      assertRateLimit(ctx.userId ?? 'anon', {
+        prefix: 'scans.list',
+        limit: 120,
+        windowMs: 60_000,
+      });
       const limit = input?.limit ?? 50;
       ctx.logger.debug({ limit }, 'scans.list');
       return ctx.db
@@ -115,7 +161,14 @@ export const scansRouter = router({
 
   getDetail: publicProcedure
     .input(z.object({ id: z.string().uuid() }))
-    .query(async ({ ctx, input }) => loadScanDetail(ctx.db, input.id)),
+    .query(async ({ ctx, input }) => {
+      assertRateLimit(ctx.userId ?? 'anon', {
+        prefix: 'scans.getDetail',
+        limit: 120,
+        windowMs: 60_000,
+      });
+      return loadScanDetail(ctx.db, input.id);
+    }),
 
   sync: syncProcedure.input(SyncScanInputSchema).mutation(async ({ ctx, input }) => {
     const { scanRun, consentText, rawOutput } = input;
@@ -140,10 +193,11 @@ export const scansRouter = router({
         startedAt: new Date(scanRun.startedAt),
         completedAt: scanRun.completedAt !== undefined ? new Date(scanRun.completedAt) : null,
         rawOutput: rawOutput ?? null,
-        normalizedOutput: { hosts: scanRun.hosts, findings: scanRun.findings },
+        normalizedOutput: toNormalizedOutput(scanRun),
       });
 
       const hostIdByIp = new Map<string, string>();
+      const serviceIdByKey = new Map<string, string>();
 
       for (const host of scanRun.hosts) {
         const hostId = crypto.randomUUID();
@@ -151,6 +205,7 @@ export const scansRouter = router({
         await tx.insert(hosts).values({
           id: hostId,
           scanRunId: scanRun.id,
+          orgId: null,
           ip: host.ip,
           hostname: host.hostname ?? null,
           mac: host.mac ?? null,
@@ -159,9 +214,12 @@ export const scansRouter = router({
         });
 
         for (const svc of host.services) {
+          const serviceId = crypto.randomUUID();
+          serviceIdByKey.set(`${host.ip}:${String(svc.port)}:${svc.protocol}`, serviceId);
           await tx.insert(services).values({
-            id: crypto.randomUUID(),
+            id: serviceId,
             hostId,
+            orgId: null,
             port: svc.port,
             protocol: svc.protocol,
             product: svc.product ?? null,
@@ -186,17 +244,21 @@ export const scansRouter = router({
       }
 
       for (const finding of scanRun.findings) {
+        const serviceKey =
+          finding.port !== undefined ? `${finding.hostIp}:${String(finding.port)}:tcp` : undefined;
         await tx.insert(findings).values({
           id: finding.id,
           scanRunId: scanRun.id,
+          orgId: null,
           hostId: hostIdByIp.get(finding.hostIp) ?? null,
-          serviceId: null,
+          serviceId: serviceKey !== undefined ? (serviceIdByKey.get(serviceKey) ?? null) : null,
           cveId: finding.cveId ?? null,
           title: finding.title,
           severity: finding.severity,
           cvssScore: finding.cvssScore ?? null,
           riskScore: finding.riskScore,
           description: finding.description ?? null,
+          port: finding.port ?? null,
         });
       }
     });
@@ -212,6 +274,11 @@ export const scansRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
+      assertRateLimit(ctx.userId ?? 'anon', {
+        prefix: 'scans.diff',
+        limit: 60,
+        windowMs: 60_000,
+      });
       const baseDetail = await loadScanDetail(ctx.db, input.baseScanId);
       const compareDetail = await loadScanDetail(ctx.db, input.compareScanId);
 

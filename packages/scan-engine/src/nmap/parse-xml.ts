@@ -16,6 +16,7 @@ type NmapPort = {
     '@_name'?: string;
     '@_product'?: string;
     '@_version'?: string;
+    '@_extrainfo'?: string;
   };
 };
 
@@ -24,7 +25,11 @@ type NmapHost = {
   address?: NmapAddress | NmapAddress[];
   hostnames?: { hostname?: { '@_name'?: string } | Array<{ '@_name'?: string }> };
   ports?: { port?: NmapPort | NmapPort[] };
-  os?: { osmatch?: { '@_name'?: string; '@_accuracy'?: string } | Array<{ '@_name'?: string; '@_accuracy'?: string }> };
+  os?: {
+    osmatch?:
+      | { '@_name'?: string; '@_accuracy'?: string }
+      | Array<{ '@_name'?: string; '@_accuracy'?: string }>;
+  };
 };
 
 type NmapRun = {
@@ -84,14 +89,19 @@ function parseServices(host: NmapHost): Service[] {
       port: portNum,
       protocol,
     };
+    // Prefer nmap product; fall back to service name (http/ssh) — never store name as banner.
     if (port.service?.['@_product'] !== undefined) {
       service.product = port.service['@_product'];
+    } else if (port.service?.['@_name'] !== undefined) {
+      service.product = port.service['@_name'];
     }
     if (port.service?.['@_version'] !== undefined) {
       service.version = port.service['@_version'];
     }
-    if (port.service?.['@_name'] !== undefined) {
-      service.banner = port.service['@_name'];
+    // Real banner/extrainfo when present (not the service name).
+    const extrainfo = port.service?.['@_extrainfo'];
+    if (extrainfo !== undefined && extrainfo.length > 0) {
+      service.banner = extrainfo;
     }
     services.push(service);
   }

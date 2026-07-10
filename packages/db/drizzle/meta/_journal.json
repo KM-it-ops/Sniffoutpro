@@ -8,6 +8,13 @@
       "when": 1782091890481,
       "tag": "0000_modern_zodiak",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783600000000,
+      "tag": "0001_audit_hardening",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,20 @@
+# Keep Vercel CLI uploads lean (desktop Rust target is ~3GB).
+node_modules
+**/node_modules
+.pnpm-store
+.turbo
+.local
+.git
+.husky
+.agents
+.cursor
+graphify-out
+coverage
+**/coverage
+**/playwright-report
+**/test-results
+apps/desktop
+**/src-tauri/target
+**/target
+apps/web/.next
+**/*.log

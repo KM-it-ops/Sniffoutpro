@@ -61,9 +61,12 @@ CREATE TABLE IF NOT EXISTS findings (
   severity TEXT NOT NULL,
   cvss_score REAL,
   risk_score REAL NOT NULL,
-  description TEXT
+  description TEXT,
+  port INTEGER
 );
 `;
+
+const ALTER_FINDINGS_PORT = `ALTER TABLE findings ADD COLUMN port INTEGER`;
 
 async function getWasmLocateFile(): Promise<(file: string) => string> {
   if (typeof window === 'undefined') {
@@ -86,6 +89,11 @@ export async function createLocalDb(existingBytes?: Uint8Array): Promise<LocalDa
   return Object.assign(db, {
     migrate: (): void => {
       sqlDb.run(MIGRATION_SQL);
+      try {
+        sqlDb.run(ALTER_FINDINGS_PORT);
+      } catch {
+        // Column already exists on upgraded DBs.
+      }
     },
     listScanRuns: (): Array<typeof sqliteScanRuns.$inferSelect> => {
       return db.select().from(sqliteScanRuns).orderBy(desc(sqliteScanRuns.startedAt)).all();

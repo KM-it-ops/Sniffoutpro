@@ -5,10 +5,9 @@ import { useState } from 'react';
 import { trpc } from '../components/providers';
 import { ScanSeverityChart } from './scan-severity-chart';
 
-const TopologyGraph = dynamic(
-  () => import('@sniffoutpro/ui').then((mod) => mod.TopologyGraph),
-  { ssr: false },
-);
+const TopologyGraph = dynamic(() => import('@sniffoutpro/ui').then((mod) => mod.TopologyGraph), {
+  ssr: false,
+});
 
 export function DashboardClient() {
   const [selectedScanId, setSelectedScanId] = useState<string | null>(null);
@@ -26,7 +25,10 @@ export function DashboardClient() {
       baseScanId: compareScanId ?? '',
       compareScanId: selectedScanId ?? '',
     },
-    { enabled: selectedScanId !== null && compareScanId !== null && compareScanId !== selectedScanId },
+    {
+      enabled:
+        selectedScanId !== null && compareScanId !== null && compareScanId !== selectedScanId,
+    },
   );
 
   const scan = detail.data?.scan;
@@ -99,6 +101,16 @@ export function DashboardClient() {
 
       {scan != null && (
         <>
+          {scan.source === 'fixture' && (
+            <p className="provenance-badge fixture" role="status">
+              LAB FIXTURE — this scan contains sample data, not live findings
+            </p>
+          )}
+          {scan.source === undefined && (
+            <p className="provenance-badge unverified" role="status">
+              Provenance unverified — synced before source tracking (treat as unconfirmed, not live)
+            </p>
+          )}
           <section className="panel">
             <h2>Finding severity</h2>
             <ScanSeverityChart findings={scan.findings} />

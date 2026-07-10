@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { correlateCves, type CveCacheEntry } from '../cve/correlate.js';
+import { compareVersions, correlateCves, type CveCacheEntry } from '../cve/correlate.js';
 
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), '../../fixtures');
 
@@ -64,5 +64,58 @@ describe('correlateCves', () => {
     ]);
     expect(contexts).toHaveLength(1);
     expect(contexts[0]?.product).toBe('nginx');
+  });
+
+  it('compares versions semver-aware (9 < 10)', () => {
+    expect(compareVersions('9', '10')).toBeLessThan(0);
+    expect(compareVersions('1.9', '1.10')).toBeLessThan(0);
+    expect(compareVersions('2.14.1', '2.14.1')).toBe(0);
+  });
+
+  it('does not match short bidirectional substrings (ssh vs sh)', () => {
+    const result = correlateCves(
+      [
+        {
+          host: { ip: '1.2.3.4', services: [{ port: 22, protocol: 'tcp', product: 'ssh' }] },
+          port: 22,
+          protocol: 'tcp',
+          product: 'ssh',
+          version: '1.0',
+        },
+      ],
+      [
+        {
+          id: 'CVE-FAKE-SH',
+          affectedProducts: [{ product: 'sh', versionStart: '0', versionEnd: '9' }],
+        },
+      ],
+    );
+    expect(result.isOk()).toBe(true);
+    if (!result.isOk()) return;
+    expect(result.value).toHaveLength(0);
+  });
+
+  it('matches version ranges with semver compare', () => {
+    const result = correlateCves(
+      [
+        {
+          host: { ip: '1.2.3.4', services: [{ port: 80, protocol: 'tcp', product: 'nginx' }] },
+          port: 80,
+          protocol: 'tcp',
+          product: 'nginx',
+          version: '1.9.0',
+        },
+      ],
+      [
+        {
+          id: 'CVE-NGINX-RANGE',
+          cvssScore: 5,
+          affectedProducts: [{ product: 'nginx', versionStart: '1.0', versionEnd: '1.10' }],
+        },
+      ],
+    );
+    expect(result.isOk()).toBe(true);
+    if (!result.isOk()) return;
+    expect(result.value).toHaveLength(1);
   });
 });

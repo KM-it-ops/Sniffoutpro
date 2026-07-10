@@ -38,6 +38,26 @@ body {
   max-width: 60ch;
 }
 
+.provenance-badge {
+  margin-top: 2rem;
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.provenance-badge.fixture {
+  border: 1px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+}
+
+.provenance-badge.unverified {
+  border: 1px solid #64748b;
+  background: rgba(100, 116, 139, 0.12);
+  color: #94a3b8;
+}
+
 .panel {
   margin-top: 2rem;
   padding: 1.5rem;

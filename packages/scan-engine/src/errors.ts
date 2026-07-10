@@ -1,6 +1,10 @@
 export type ScanErrorCode =
   | 'PARSE_FAILED'
   | 'INVALID_TARGET'
+  | 'CIDR_TOO_LARGE'
+  | 'PRIVATE_RANGE'
+  | 'RESERVED_RANGE'
+  | 'JOB_TOO_LARGE'
   | 'NMAP_NOT_FOUND'
   | 'SCAN_TIMEOUT'
   | 'CVE_LOOKUP_FAILED';
