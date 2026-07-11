@@ -52,6 +52,9 @@ jobs:
             echo "DATABASE_URL secret not set — skipping migrate (DDL currently applied via Supabase MCP)"
             exit 0
           fi
+          # Reconcile the migration ledger for schema that predates it
+          # (0000 via early tooling, 0001 via Supabase MCP) — idempotent.
+          node scripts/migrate-baseline.mjs
           pnpm --filter @sniffoutpro/db db:migrate
 
   deploy:
