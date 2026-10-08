@@ -43,9 +43,9 @@ describe('tRPC api', () => {
     expect(result.service).toBe('sniffoutpro-api');
   });
 
-  it('scans.list returns array when database is available', async () => {
+  it('scans.list returns array when database is available', async (ctx) => {
     if (!dbAvailable) {
-      console.warn('Skipping scans.list integration test — Postgres not reachable');
+      ctx.skip();
       return;
     }
     const caller = createCaller({
@@ -59,9 +59,9 @@ describe('tRPC api', () => {
     expect(Array.isArray(result)).toBe(true);
   });
 
-  it('scans.sync persists a scan run when database is available', async () => {
+  it('scans.sync persists a scan run when database is available', async (ctx) => {
     if (!dbAvailable) {
-      console.warn('Skipping scans.sync integration test — Postgres not reachable');
+      ctx.skip();
       return;
     }
     const userId = '44444444-4444-4444-8444-444444444444';

@@ -1,7 +1,9 @@
 # SniffOutPro — Handoff for Next Session (reconciled)
 
+> Historical note from 2026-07-10. Do not follow this file. The repo is `C:\AI\projects\Sniffoutpro`. Resume from `docs/HANDOFF.md` and `docs/plans/2026-10-08-0723-feat-finish-sniffoutpro-plan.md`. Do not spawn the July swarm. The path named below does not exist.
+
 **Date:** 2026-07-10
-**Repo:** `C:\Users\alkur\Projects\Sniffoutpro`
+**Repo:** `C:\AI\projects\Sniffoutpro`
 **Your goal:** finish workstreams **(a) spec changeset** and **(b) audit fixes** — but read §1 first: **most of both is already done and uncommitted.**
 
 ---
@@ -59,7 +61,7 @@ Because a/b are basically done, pick a lane and tell the agent which:
 
 ```powershell
 $env:Path = "C:\Program Files\nodejs;" + $env:Path
-cd C:\Users\alkur\Projects\Sniffoutpro
+cd C:\AI\projects\Sniffoutpro
 git status --short           # confirm the uncommitted hardening is still present
 pnpm install
 pnpm turbo run typecheck lint test
@@ -70,14 +72,11 @@ node scripts/verify-production.mjs https://sniffoutpro-web.vercel.app $token
 ## 6. Resume prompt (paste into the new session)
 
 ```
-Continue SniffOutPro in C:\Users\alkur\Projects\Sniffoutpro.
-Read first: docs/HANDOFF-NEXT-SESSION.md, docs/AUDIT-RESIDUAL-2026-07-09.md, docs/MULTI-AGENT-HANDOFF.md.
-State: spec v2.1 shipped; audit hardening 11/15 done but UNCOMMITTED on main (only 2 commits exist); G2b cleared.
-Do Lane A: (1) run VERIFY-FIX LOOP + verify-production to confirm green, (2) finish residual C3
-(persist scanRun.source through scans.sync) and document the Drizzle 0001_audit_hardening ≡ Supabase
-audit_hardening name mapping, (3) then COMMIT the full hardening set (conventional message, no secrets,
-never stage .local/*). Report before any deploy. Do not start Phase 4 unless I say "continue to Phase 4."
-Hard rules: no re-scaffold; DDL via Supabase MCP; VERIFY-FIX LOOP after every change.
+Continue SniffOutPro in C:\AI\projects\Sniffoutpro.
+Read first: docs/HANDOFF.md, docs/plans/2026-10-08-0723-feat-finish-sniffoutpro-plan.md, docs/progress.md.
+Do not follow this July note or docs/MULTI-AGENT-HANDOFF.md.
+Do not start Stripe or code signing until Boss supplies the account or certificate.
+Ask before committing. Do not push or deploy.
 ```
 
 ## 7. Do NOT
