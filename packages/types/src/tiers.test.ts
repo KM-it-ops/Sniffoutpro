@@ -14,5 +14,7 @@ describe('tiers', () => {
   it('gates features by tier', () => {
     expect(hasTierFeature('PERSONAL', 'cloudSync')).toBe(false);
     expect(hasTierFeature('WORKSTATION', 'cloudSync')).toBe(true);
+    expect(hasTierFeature('WORKSTATION', 'reports')).toBe(false);
+    expect(hasTierFeature('CONSULTANT', 'reports')).toBe(true);
   });
 });

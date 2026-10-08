@@ -15,6 +15,34 @@
       "when": 1783600000000,
       "tag": "0001_audit_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783641600000,
+      "tag": "0002_user_tier",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783645200000,
+      "tag": "0003_scan_job_owner",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783648800000,
+      "tag": "0004_org_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783652400000,
+      "tag": "0005_membership_unique",
+      "breakpoints": true
     }
   ]
 }

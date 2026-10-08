@@ -6,36 +6,45 @@ import { createLogger } from './logger.js';
 const createCaller = createCallerFactory(appRouter);
 const logger = createLogger('lockdown-test');
 
-/**
- * Pre-G6 lockdown checklist (CH-2 / audit S2):
- * Once Phase 4 auth is wired, scans.list/getDetail/diff and hosts/findings
- * MUST reject unauthenticated callers in production.
- *
- * Today (single-tenant v1): procedures remain publicProcedure with rate limits.
- * This test documents the intended contract and will flip to expect UNAUTHORIZED
- * when protectedProcedure is applied.
- */
-describe('pre-G6 auth lockdown contract', () => {
-  it('documents that hosts.list and findings.list are rate-limited public until Phase 4', () => {
-    // Contract marker — Phase 4 flips these to protectedProcedure.
-    const phase4LockdownPending = true;
-    expect(phase4LockdownPending).toBe(true);
+const scanId = '33333333-3333-4333-8333-333333333333';
+
+function anonymousCaller() {
+  return createCaller({
+    db: {} as never,
+    logger,
+    userId: null,
+    tier: 'WORKSTATION',
+    syncAuthorized: true,
+  });
+}
+
+describe('cloud data requires a signed-in user', () => {
+  it('rejects scan list, detail, diff, hosts, and findings for a null user', async () => {
+    const caller = anonymousCaller();
+
+    await expect(caller.scans.list()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    await expect(caller.scans.getDetail({ id: scanId })).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    });
+    await expect(
+      caller.scans.diff({ baseScanId: scanId, compareScanId: scanId }),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    await expect(caller.hosts.list({ scanRunId: scanId })).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    });
+    await expect(caller.findings.list({ scanRunId: scanId })).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    });
   });
 
-  it('rejects scans.sync without syncAuthorized (already enforced)', async () => {
-    const caller = createCaller({
-      db: {} as never,
-      logger,
-      userId: null,
-      tier: 'WORKSTATION',
-      syncAuthorized: false,
-    });
+  it('rejects scans.sync for a null user even when the shared secret would authorize sync', async () => {
+    const caller = anonymousCaller();
 
     await expect(
       caller.scans.sync({
         consentText: 'test',
         scanRun: {
-          id: crypto.randomUUID(),
+          id: scanId,
           status: 'completed',
           targets: ['127.0.0.1'],
           intensity: 'light',
@@ -48,15 +57,8 @@ describe('pre-G6 auth lockdown contract', () => {
     ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
   });
 
-  it('rejects auth.me without userId (protectedProcedure baseline)', async () => {
-    const caller = createCaller({
-      db: {} as never,
-      logger,
-      userId: null,
-      tier: 'WORKSTATION',
-      syncAuthorized: false,
-    });
-
+  it('rejects auth.me without userId', async () => {
+    const caller = anonymousCaller();
     await expect(caller.auth.me()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
   });
 });

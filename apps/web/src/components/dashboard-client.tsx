@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useState } from 'react';
 import { trpc } from '../components/providers';
+import { ScanHistory } from './scan-history';
 import { ScanSeverityChart } from './scan-severity-chart';
 
 const TopologyGraph = dynamic(() => import('@sniffoutpro/ui').then((mod) => mod.TopologyGraph), {
@@ -49,26 +50,16 @@ export function DashboardClient() {
         <div>
           <h2>Scan history</h2>
           {scans.isLoading && <p>Loading scans…</p>}
-          {scans.data?.length === 0 && (
-            <p>No synced scans yet. Run a scan in the desktop app and click Sync to cloud.</p>
+          {scans.data !== undefined && (
+            <ScanHistory
+              scans={scans.data}
+              selectedScanId={selectedScanId}
+              onSelect={(id) => {
+                setSelectedScanId(id);
+                setSelectedHostIp(null);
+              }}
+            />
           )}
-          <ul className="scan-list">
-            {scans.data?.map((row) => (
-              <li key={row.id}>
-                <button
-                  type="button"
-                  className={selectedScanId === row.id ? 'scan-item active' : 'scan-item'}
-                  onClick={() => {
-                    setSelectedScanId(row.id);
-                    setSelectedHostIp(null);
-                  }}
-                >
-                  <strong>{row.status}</strong> — {row.targets.join(', ')}
-                  <span>{new Date(row.startedAt).toLocaleString()}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
         </div>
 
         <div>

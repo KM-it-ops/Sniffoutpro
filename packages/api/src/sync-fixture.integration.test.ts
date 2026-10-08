@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import { createDb } from '@sniffoutpro/db';
+import { memberships, organizations, users } from '@sniffoutpro/db/schema';
 import {
   correlateCves,
   hostsToServiceContexts,
@@ -76,12 +77,23 @@ describe('fixture scan cloud sync', () => {
     }
 
     const scanRun = buildFixtureScanRun();
+    const userId = '55555555-5555-4555-8555-555555555555';
+    const orgId = '55555555-5555-4555-8555-555555555556';
+    await db
+      .insert(users)
+      .values({ id: userId, email: 'fixture-sync@example.com' })
+      .onConflictDoNothing();
+    await db
+      .insert(organizations)
+      .values({ id: orgId, name: 'Fixture lab', slug: 'fixture-lab' })
+      .onConflictDoNothing();
+    await db.insert(memberships).values({ orgId, userId, role: 'analyst' }).onConflictDoNothing();
     const caller = createCaller({
       db,
       logger,
-      userId: null,
+      userId,
       tier: 'WORKSTATION',
-      syncAuthorized: true,
+      syncAuthorized: false,
     });
 
     const sync = await caller.scans.sync({
