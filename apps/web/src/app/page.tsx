@@ -7,8 +7,8 @@ export default function HomePage() {
         <p className="eyebrow">SniffOutPro</p>
         <h1>Visual vulnerability assessment</h1>
         <p className="lede">
-          Scans run on the desktop agent. Sync results to the web dashboard for history, diffs,
-          and topology visualization.
+          Scans run on the desktop agent. Sync results to the web dashboard for history, diffs, and
+          topology visualization.
         </p>
       </header>
 
@@ -19,8 +19,10 @@ export default function HomePage() {
             <strong>Desktop:</strong> run a scan (live nmap or fixture), then Sync to cloud
           </li>
           <li>
-            <strong>Web:</strong>{' '}
-            <Link href="/dashboard">Open dashboard</Link>
+            <strong>Web:</strong> <Link href="/sign-in">Sign in</Link> or{' '}
+            <Link href="/sign-up">create an account</Link>, then{' '}
+            <Link href="/dashboard">open the dashboard</Link> or{' '}
+            <Link href="/organizations">manage an organization</Link>
           </li>
         </ul>
       </section>

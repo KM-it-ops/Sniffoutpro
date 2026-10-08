@@ -8,6 +8,7 @@ import {
   jsonb,
   real,
   index,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
 export const organizations = pgTable('organizations', {
@@ -21,6 +22,9 @@ export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: text('email').notNull().unique(),
   displayName: text('display_name'),
+  tier: text('tier', { enum: ['PERSONAL', 'WORKSTATION', 'CONSULTANT', 'ADMIN'] })
+    .notNull()
+    .default('WORKSTATION'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -40,6 +44,7 @@ export const memberships = pgTable(
   (table) => [
     index('memberships_org_id_idx').on(table.orgId),
     index('memberships_user_id_idx').on(table.userId),
+    uniqueIndex('memberships_org_user_unique').on(table.orgId, table.userId),
   ],
 );
 
@@ -226,9 +231,11 @@ export const sslCertificates = pgTable('ssl_certificates', {
 export const scanJobs = pgTable('scan_jobs', {
   id: uuid('id').primaryKey().defaultRandom(),
   orgId: uuid('org_id').references(() => organizations.id),
+  userId: uuid('user_id').references(() => users.id),
   cron: text('cron').notNull(),
   targets: jsonb('targets').$type<string[]>().notNull(),
   intensity: text('intensity', { enum: ['light', 'standard', 'deep'] }).notNull(),
   enabled: boolean('enabled').default(true).notNull(),
+  nextRunAt: timestamp('next_run_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });

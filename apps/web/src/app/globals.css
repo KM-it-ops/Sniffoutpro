@@ -148,11 +148,32 @@ body {
 }
 
 select,
-button {
+button,
+input {
   font: inherit;
 }
 
-select {
+.auth-form {
+  display: grid;
+  gap: 1rem;
+  max-width: 28rem;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.auth-error {
+  color: #fca5a5;
+}
+
+.auth-notice {
+  color: #fde68a;
+}
+
+select,
+.auth-form input {
   width: 100%;
   margin-top: 0.35rem;
   padding: 0.5rem;

@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import { createDb } from '@sniffoutpro/db';
+import { users } from '@sniffoutpro/db/schema';
 import { appRouter } from './router.js';
 import { createCallerFactory } from './trpc.js';
 import { createLogger } from './logger.js';
@@ -50,9 +51,9 @@ describe('tRPC api', () => {
     const caller = createCaller({
       db,
       logger,
-      userId: null,
+      userId: '44444444-4444-4444-8444-444444444444',
       tier: 'PERSONAL',
-      syncAuthorized: true,
+      syncAuthorized: false,
     });
     const result = await caller.scans.list();
     expect(Array.isArray(result)).toBe(true);
@@ -63,12 +64,17 @@ describe('tRPC api', () => {
       console.warn('Skipping scans.sync integration test — Postgres not reachable');
       return;
     }
+    const userId = '44444444-4444-4444-8444-444444444444';
+    await db
+      .insert(users)
+      .values({ id: userId, email: 'router-test@example.com' })
+      .onConflictDoNothing();
     const caller = createCaller({
       db,
       logger,
-      userId: null,
+      userId,
       tier: 'WORKSTATION',
-      syncAuthorized: true,
+      syncAuthorized: false,
     });
 
     const scanId = crypto.randomUUID();
@@ -105,5 +111,20 @@ describe('tRPC api', () => {
     const detail = await caller.scans.getDetail({ id: scanId });
     expect(detail?.scan.hosts).toHaveLength(1);
     expect(detail?.scan.findings).toHaveLength(1);
+    const listed = await caller.scans.list();
+    expect(listed.some((row) => row.id === scanId)).toBe(true);
+
+    const other = createCaller({
+      db,
+      logger,
+      userId: '55555555-5555-4555-8555-555555555555',
+      tier: 'WORKSTATION',
+      syncAuthorized: false,
+    });
+    const hidden = await other.scans.list();
+    expect(hidden.some((row) => row.id === scanId)).toBe(false);
+    await expect(other.scans.getDetail({ id: scanId })).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
   });
 });

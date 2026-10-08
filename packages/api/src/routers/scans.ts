@@ -1,4 +1,4 @@
-import { desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Database } from '@sniffoutpro/db';
 import {
@@ -6,9 +6,12 @@ import {
   cveCache,
   findings,
   hosts,
+  memberships,
   scanRuns,
   services,
 } from '@sniffoutpro/db/schema';
+import { scansVisibleTo, uploadOrgId } from '../org/access.js';
+import { assertScanInCallerOrg } from '../org/scan-guard.js';
 import { diffScanRuns } from '@sniffoutpro/scan-engine';
 import {
   FindingSchema,
@@ -19,7 +22,7 @@ import {
   type ScanRun,
 } from '@sniffoutpro/types';
 import { assertRateLimit } from '../rate-limit.js';
-import { router, publicProcedure, syncProcedure } from '../trpc.js';
+import { router, protectedProcedure } from '../trpc.js';
 
 const SyncScanInputSchema = z.object({
   consentText: z.string().min(1),
@@ -128,7 +131,7 @@ async function loadScanDetail(db: Database, id: string): Promise<{ scan: ScanRun
 }
 
 export const scansRouter = router({
-  list: publicProcedure
+  list: protectedProcedure
     .input(
       z
         .object({
@@ -137,7 +140,6 @@ export const scansRouter = router({
         .optional(),
     )
     .query(async ({ ctx, input }) => {
-      // Single-tenant v1: public reads allowed with rate limit until Phase 4 auth lockdown.
       assertRateLimit(ctx.userId ?? 'anon', {
         prefix: 'scans.list',
         limit: 120,
@@ -145,9 +147,35 @@ export const scansRouter = router({
       });
       const limit = input?.limit ?? 50;
       ctx.logger.debug({ limit }, 'scans.list');
-      return ctx.db
+      if (ctx.userId === null) {
+        return [];
+      }
+      const memberRows = await ctx.db
+        .select({ orgId: memberships.orgId })
+        .from(memberships)
+        .where(eq(memberships.userId, ctx.userId));
+      const orgIds = memberRows.map((row) => row.orgId);
+      if (orgIds.length === 0) {
+        return ctx.db
+          .select({
+            id: scanRuns.id,
+            orgId: scanRuns.orgId,
+            status: scanRuns.status,
+            targets: scanRuns.targets,
+            intensity: scanRuns.intensity,
+            startedAt: scanRuns.startedAt,
+            completedAt: scanRuns.completedAt,
+          })
+          .from(scanRuns)
+          .innerJoin(authorizationScopes, eq(scanRuns.authorizationScopeId, authorizationScopes.id))
+          .where(and(isNull(scanRuns.orgId), eq(authorizationScopes.userId, ctx.userId)))
+          .orderBy(desc(scanRuns.startedAt))
+          .limit(limit);
+      }
+      const rows = await ctx.db
         .select({
           id: scanRuns.id,
+          orgId: scanRuns.orgId,
           status: scanRuns.status,
           targets: scanRuns.targets,
           intensity: scanRuns.intensity,
@@ -155,11 +183,13 @@ export const scansRouter = router({
           completedAt: scanRuns.completedAt,
         })
         .from(scanRuns)
+        .where(inArray(scanRuns.orgId, orgIds))
         .orderBy(desc(scanRuns.startedAt))
         .limit(limit);
+      return scansVisibleTo(rows, orgIds);
     }),
 
-  getDetail: publicProcedure
+  getDetail: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
       assertRateLimit(ctx.userId ?? 'anon', {
@@ -167,12 +197,27 @@ export const scansRouter = router({
         limit: 120,
         windowMs: 60_000,
       });
+      if (ctx.userId === null) {
+        return null;
+      }
+      const seen = await assertScanInCallerOrg(ctx.db, ctx.userId, input.id);
+      if (seen === 'missing') {
+        return null;
+      }
       return loadScanDetail(ctx.db, input.id);
     }),
 
-  sync: syncProcedure.input(SyncScanInputSchema).mutation(async ({ ctx, input }) => {
+  sync: protectedProcedure.input(SyncScanInputSchema).mutation(async ({ ctx, input }) => {
     const { scanRun, consentText, rawOutput } = input;
     ctx.logger.info({ scanId: scanRun.id, targets: scanRun.targets }, 'scans.sync');
+    const memberRows =
+      ctx.userId === null
+        ? []
+        : await ctx.db
+            .select({ orgId: memberships.orgId })
+            .from(memberships)
+            .where(eq(memberships.userId, ctx.userId));
+    const orgId = uploadOrgId(memberRows.map((row) => row.orgId));
 
     await ctx.db.transaction(async (tx) => {
       const scopeId = crypto.randomUUID();
@@ -186,6 +231,7 @@ export const scansRouter = router({
 
       await tx.insert(scanRuns).values({
         id: scanRun.id,
+        orgId,
         authorizationScopeId: scopeId,
         status: scanRun.status,
         targets: scanRun.targets,
@@ -205,7 +251,7 @@ export const scansRouter = router({
         await tx.insert(hosts).values({
           id: hostId,
           scanRunId: scanRun.id,
-          orgId: null,
+          orgId,
           ip: host.ip,
           hostname: host.hostname ?? null,
           mac: host.mac ?? null,
@@ -219,7 +265,7 @@ export const scansRouter = router({
           await tx.insert(services).values({
             id: serviceId,
             hostId,
-            orgId: null,
+            orgId,
             port: svc.port,
             protocol: svc.protocol,
             product: svc.product ?? null,
@@ -249,7 +295,7 @@ export const scansRouter = router({
         await tx.insert(findings).values({
           id: finding.id,
           scanRunId: scanRun.id,
-          orgId: null,
+          orgId,
           hostId: hostIdByIp.get(finding.hostIp) ?? null,
           serviceId: serviceKey !== undefined ? (serviceIdByKey.get(serviceKey) ?? null) : null,
           cveId: finding.cveId ?? null,
@@ -266,7 +312,7 @@ export const scansRouter = router({
     return { ok: true as const, scanId: scanRun.id };
   }),
 
-  diff: publicProcedure
+  diff: protectedProcedure
     .input(
       z.object({
         baseScanId: z.string().uuid(),
@@ -279,6 +325,14 @@ export const scansRouter = router({
         limit: 60,
         windowMs: 60_000,
       });
+      if (ctx.userId === null) {
+        return null;
+      }
+      const baseSeen = await assertScanInCallerOrg(ctx.db, ctx.userId, input.baseScanId);
+      const compareSeen = await assertScanInCallerOrg(ctx.db, ctx.userId, input.compareScanId);
+      if (baseSeen === 'missing' || compareSeen === 'missing') {
+        return null;
+      }
       const baseDetail = await loadScanDetail(ctx.db, input.baseScanId);
       const compareDetail = await loadScanDetail(ctx.db, input.compareScanId);
 

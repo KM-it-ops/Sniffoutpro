@@ -38,6 +38,13 @@ describe('validateScanScope', () => {
     expect(result.error.code).toBe('PRIVATE_RANGE');
   });
 
+  it('blocks loopback without private override', () => {
+    const result = validateScanScope('127.0.0.1');
+    expect(result.isErr()).toBe(true);
+    if (!result.isErr()) return;
+    expect(result.error.code).toBe('PRIVATE_RANGE');
+  });
+
   it('allows loopback with private override', () => {
     const result = validateScanScope('127.0.0.1', { allowPrivateOverride: true });
     expect(result.isOk()).toBe(true);
