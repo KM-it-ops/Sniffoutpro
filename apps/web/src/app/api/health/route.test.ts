@@ -1,0 +1,13 @@
+import { describe, expect, it } from 'vitest';
+import { GET } from './route';
+
+describe('GET /api/health', () => {
+  it('answers with no session', async () => {
+    const response = GET();
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      status: 'ok',
+      service: 'sniffoutpro-web',
+    });
+  });
+});

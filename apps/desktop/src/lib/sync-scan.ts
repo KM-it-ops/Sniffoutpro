@@ -8,19 +8,13 @@ function getWebUrl(): string {
   return typeof url === 'string' ? url : 'http://localhost:3000';
 }
 
-function getSyncToken(): string | undefined {
-  const token: unknown = import.meta.env['VITE_SYNC_TOKEN'];
-  return typeof token === 'string' && token.length > 0 ? token : undefined;
-}
-
-function createApiClient() {
-  const syncToken = getSyncToken();
+function createApiClient(accessToken: string) {
   return createTRPCClient<AppRouter>({
     links: [
       httpBatchLink({
         url: `${getWebUrl()}/api/trpc`,
         transformer: superjson,
-        headers: () => (syncToken !== undefined ? { authorization: `Bearer ${syncToken}` } : {}),
+        headers: () => ({ authorization: `Bearer ${accessToken}` }),
       }),
     ],
   });
@@ -29,9 +23,13 @@ function createApiClient() {
 export async function syncScanToCloud(
   scanRun: ScanRun,
   consentText: string,
+  accessToken: string,
   rawOutput?: string,
 ): Promise<{ scanId: string }> {
-  const client = createApiClient();
+  if (accessToken.length === 0) {
+    throw new Error('Sign in before syncing this scan.');
+  }
+  const client = createApiClient(accessToken);
   const result = await client.scans.sync.mutate({
     consentText,
     scanRun,

@@ -8,6 +8,8 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "local": "node scripts/ensure-local-postgres.mjs && pnpm --filter @sniffoutpro/web dev",
+    "package:desktop": "pnpm --filter @sniffoutpro/desktop package",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
