@@ -40,6 +40,16 @@ body {
   background: #111827;
 }
 
+details.panel summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+details.panel ol {
+  color: #cbd5e1;
+  line-height: 1.5;
+}
+
 .scan-form label {
   display: block;
   margin-bottom: 0.75rem;

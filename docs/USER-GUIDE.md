@@ -4,9 +4,35 @@ This tool identifies hosts and known vulnerabilities on a network you are allowe
 
 ## Install
 
-The desktop app is the scanner. A signed Windows installer is not available until a code-signing certificate is in place. Until then, run the desktop app from the project with the steps in `docs/DEMO-G2.md`.
+The desktop app is the scanner. It runs with no account. The first scan creates a database on that computer. You do not create the database yourself, and you do not set a connection string for this path.
 
-The website shows history, reports, and organizations after you sign in.
+From the repo, package an unsigned Windows installer:
+
+```powershell
+pnpm package:desktop
+```
+
+The installer built on this computer is `C:\AI\labs\scratch\sniffoutpro-installer\SniffOutPro_0.0.0_x64-setup.exe`. It is unsigned. A signed installer still waits on a Windows code-signing certificate.
+
+Live scans need Nmap installed from its own vendor. A lab fixture scan does not. The app looks for `nmap.exe` under Program Files, then on PATH.
+
+The website shows history, reports, and organizations after you sign in. For a local website database, without filling in a connection string:
+
+```powershell
+pnpm local
+```
+
+That starts the local Postgres database, applies the migrations, and opens the website. The desktop scanner does not need that database.
+
+## Several people, or a live website
+
+Stay on the local desktop when you are the only person. Set up Supabase when more than one person should sign in, or when scans should leave the computer.
+
+1. Create a project at supabase.com and turn on email sign-in.
+2. On the website, set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_URL`, and `SUPABASE_ANON_KEY` to that project. Use the anon key, not the service role key.
+3. On the desktop app, set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to the same project, and set `VITE_WEB_URL` to the website address.
+4. Set `DATABASE_URL` to the project database connection string. From the repo, apply the migrations with `pnpm --filter @sniffoutpro/db db:migrate`.
+5. Do not put the service role key in the desktop app or in any `NEXT_PUBLIC` value. It is only for storing a report logo.
 
 ## Consent
 
