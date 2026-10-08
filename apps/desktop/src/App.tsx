@@ -324,8 +324,35 @@ function DesktopApp() {
 
         <h1>Tier 1 — Personal scan</h1>
 
-        <p className="lede">Authorized scanning only. Results persist to local SQLite.</p>
+        <p className="lede">
+          Authorized scanning only. No account is required. The first scan creates a database on
+          this computer.
+        </p>
       </header>
+
+      <details className="panel">
+        <summary>Several people, or a live website</summary>
+        <p>
+          One computer does not need Supabase. Set it up when more than one person should sign in,
+          or when scans should leave this computer.
+        </p>
+        <ol>
+          <li>Create a project at supabase.com and turn on email sign-in.</li>
+          <li>
+            Put the project URL and anon key in the website as NEXT_PUBLIC_SUPABASE_URL and
+            NEXT_PUBLIC_SUPABASE_ANON_KEY, and the same pair as SUPABASE_URL and SUPABASE_ANON_KEY.
+          </li>
+          <li>
+            Put that same URL and anon key in the desktop app as VITE_SUPABASE_URL and
+            VITE_SUPABASE_ANON_KEY, and set VITE_WEB_URL to the website address.
+          </li>
+          <li>
+            Set DATABASE_URL to the project database connection string, then apply the migrations
+            with pnpm --filter @sniffoutpro/db db:migrate.
+          </li>
+          <li>Do not put the service role key in the desktop app or in a NEXT_PUBLIC value.</li>
+        </ol>
+      </details>
 
       <section className="panel scan-form">
         <label>
