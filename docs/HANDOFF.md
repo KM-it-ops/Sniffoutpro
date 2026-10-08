@@ -9,7 +9,7 @@ Do not re-scaffold. Do not spawn the July multi-agent swarm in `docs/MULTI-AGENT
 
 ## What is already built locally
 
-Sign-in, cloud reads locked to a signed-in user, per-user tier, desktop schedules, consultant PDF reports, organization invites on the website, and a daily vulnerability-feed job that pages a window of at most 120 days. Migrations `0002` through `0005` are files only. They are not applied to the live database. `0005` keeps one membership per person in an organization.
+Sign-in, cloud reads locked to a signed-in user, per-user tier, desktop schedules, consultant PDF reports, organization invites on the website, and a daily vulnerability-feed job that pages a window of at most 120 days. That work is on `feat/signed-in-scans-schedules-reports`, including `de71c2d`. The first signed-in API call saves the person before the tier is read. Migrations `0002` through `0005` are files only. They are not applied to the live database. `0005` keeps one membership per person in an organization.
 
 ## Stopped until Boss provides them
 

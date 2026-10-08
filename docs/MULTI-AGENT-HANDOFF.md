@@ -1,8 +1,10 @@
 # SniffOutPro — Multi-Agent Completion Handoff
 
+> Historical. Do not spawn this swarm and do not solo from this file. The repo is `C:\AI\projects\Sniffoutpro`. Resume from `docs/HANDOFF.md`. One implementer. Paid checkout and the signed installer stay until Boss supplies Stripe and a certificate.
+
 **Created:** 2026-07-10  
 **For:** Fresh orchestrator agent — spawn subagents; do not solo the remaining product.  
-**Repo:** `C:\Users\alkur\Projects\Sniffoutpro`  
+**Repo:** `C:\AI\projects\Sniffoutpro`  
 **In-repo mirror:** `docs/MULTI-AGENT-HANDOFF.md` (keep in sync if you edit)
 
 ---
