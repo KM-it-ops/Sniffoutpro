@@ -112,7 +112,11 @@ describe('resolveRequestAuth', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() =>
-        Promise.resolve(new Response(JSON.stringify({ id: AUTH_USER_ID }), { status: 200 })),
+        Promise.resolve(
+          new Response(JSON.stringify({ id: AUTH_USER_ID, email: 'analyst@example.com' }), {
+            status: 200,
+          }),
+        ),
       ),
     );
 
@@ -123,6 +127,7 @@ describe('resolveRequestAuth', () => {
     );
 
     expect(auth.userId).toBe(AUTH_USER_ID);
+    expect(auth.email).toBe('analyst@example.com');
     expect(auth.syncAuthorized).toBe(true);
   });
 
