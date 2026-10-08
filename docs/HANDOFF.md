@@ -1,52 +1,27 @@
-# SniffOutPro — Agent Handoff
+# SniffOutPro — resume here
 
-**Date:** 2026-07-10  
-**Phase:** 3 complete → **multi-agent completion** (Phase 4+)  
-**Gate:** G2b **CLEARED** + audit hardening **SHIPPED**  
-**Orchestration:** **`docs/MULTI-AGENT-HANDOFF.md`** (also `%TEMP%\sniffoutpro-multi-agent-handoff.md`)
+**Date:** 2026-10-08  
+**Plan:** `docs/plans/2026-10-08-0723-feat-finish-sniffoutpro-plan.md`  
+**Progress:** `docs/progress.md`  
+**Repo:** this folder. The old path under `C:\Users\alkur\Projects` is gone. Do not use it.
 
-**Last green local:** `pnpm turbo run typecheck lint test --force` → **29/29 EXIT=0**  
-**Last prod smoke:** `verify-production.mjs` → **EXIT=0**; `scans.sync` unauth → **401**  
-**Governing spec:** `docs/GREENFIELD-SPEC.md` **v2.1**  
-**Execution addendum:** `docs/AUTONOMOUS-EXECUTION-ADDENDUM.md`
+Do not re-scaffold. Do not spawn the July multi-agent swarm in `docs/MULTI-AGENT-HANDOFF.md`. That handoff is history. One implementer, one unit at a time. Ask before each commit. Do not push or change the live site until Boss asks.
 
----
+## What is already built locally
 
-## Stop here — read this first
+Sign-in, cloud reads locked to a signed-in user, per-user tier, desktop schedules, consultant PDF reports, organization invites on the website, and a daily vulnerability-feed job that pages a window of at most 120 days. That work is on `feat/signed-in-scans-schedules-reports`, including `de71c2d`. The first signed-in API call saves the person before the tier is read. Migrations `0002` through `0005` are applied on the local Postgres container. They are not applied to the live database. `0005` keeps one membership per person in an organization.
 
-Do **not** re-scaffold. Do **not** solo Phases 4–7.
+A local desktop scan needs no account. The first scan creates that computer's database. The unsigned installer is `C:\AI\labs\scratch\sniffoutpro-installer\SniffOutPro_0.0.0_x64-setup.exe`. `pnpm local` creates the local website database.
 
-**Next session = Orchestrator.** Open `docs/MULTI-AGENT-HANDOFF.md` and spawn Wave 0 subagents (A0 audit, R0 review, S0 smoke) in parallel.
+## Later, only if the base app earns it
 
-| Check                                   | Status              |
-| --------------------------------------- | ------------------- |
-| Prod https://sniffoutpro-web.vercel.app | Live                |
-| Audit hardening migrated + deployed     | Done                |
-| Uncommitted hardening on `main`         | Pending Boss commit |
-| Creator + User docs                     | Wave 1 deliverables |
-| Phase 4 auth lockdown                   | Wave 3              |
-
----
+Paid checkout and Supabase sign-in are not next. Add them only if the base app is functional and caters to a market. A signed installer still needs a Windows certificate. The unsigned installer above is already built. Rust is installed. Live scans still need Nmap from its vendor.
 
 ## Resume prompt
 
 ```
-You are the Orchestrator for SniffOutPro multi-agent completion.
-
-Read:
-- docs/MULTI-AGENT-HANDOFF.md
-- docs/HANDOFF.md
-- docs/GREENFIELD-SPEC.md v2.1
-- docs/AUTONOMOUS-EXECUTION-ADDENDUM.md
-
-Spawn Wave 0 now (A0 residual audit, R0 code review, S0 smoke) in parallel.
-Then Wave 1 → 2 → 3 per MULTI-AGENT-HANDOFF. Two doc tracks: docs/CREATOR.md + docs/USER-GUIDE.md.
-Do not re-scaffold. Commit only when Boss asks. Stop before Phase 5 unless Boss expands scope.
+Continue SniffOutPro from docs/plans/2026-10-08-0723-feat-finish-sniffoutpro-plan.md.
+Read the Goal Capsule, then docs/progress.md, then the next unfinished unit.
+Do not re-scaffold. Do not add Stripe or Supabase sign-in unless the base app is functional and caters to a market.
+Ask before committing. Do not push or deploy.
 ```
-
-## Do NOT
-
-- Re-scaffold
-- Commit `.local/*` or secrets
-- Use Vercel env pull for `DATABASE_URL` (Sensitive) — use Supabase MCP for DDL
-- Start Phase 5–7 without Boss greenlight

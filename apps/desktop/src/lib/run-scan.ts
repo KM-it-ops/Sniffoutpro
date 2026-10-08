@@ -216,10 +216,19 @@ export async function runDesktopScan(
     .where(eq(sqliteScanRuns.id, scanId))
     .run();
 
-  await saveDbBytes(db.exportBytes());
+  let savedLocally = true;
+  try {
+    await saveDbBytes(db.exportBytes());
+  } catch {
+    savedLocally = false;
+  }
   onProgress?.({
     percent: 100,
-    message: source === 'fixture' ? 'Scan complete (lab fixture)' : 'Scan complete',
+    message: savedLocally
+      ? source === 'fixture'
+        ? 'Scan complete (lab fixture). Saved on this computer.'
+        : 'Scan complete. Saved on this computer.'
+      : 'Scan complete. It could not be saved on this computer.',
   });
   db.close();
   return scanRun;

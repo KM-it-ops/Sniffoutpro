@@ -2,7 +2,12 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { correlateCves, hostsToServiceContexts, LOG4J_CVE_FIXTURE, parseNmapXml } from '@sniffoutpro/scan-engine';
+import {
+  correlateCves,
+  hostsToServiceContexts,
+  LOG4J_CVE_FIXTURE,
+  parseNmapXml,
+} from '@sniffoutpro/scan-engine';
 
 const fixturePath = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -26,5 +31,11 @@ describe('desktop scan fixture pipeline', () => {
     expect(findings.isOk()).toBe(true);
     if (!findings.isOk()) return;
     expect(findings.value.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('does not upload the lab fixture scan to the network', () => {
+    const source = readFileSync(new URL('./run-scan.ts', import.meta.url), 'utf8');
+    expect(source.includes('syncScanToCloud')).toBe(false);
+    expect(source.includes('fetch(')).toBe(false);
   });
 });

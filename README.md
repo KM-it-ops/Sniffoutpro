@@ -1,84 +1,51 @@
 # SniffOutPro
 
-Visual, interactive vulnerability assessment platform. Scans run on the **desktop agent** (Tauri); the **web dashboard** is the control plane and visualization layer.
+Authorized vulnerability assessment on your own computer.
 
-## Prerequisites
+A local scan needs no account. The first scan creates a database on that computer. The website never scans a network, and this tool does not exploit a target.
 
-| Tool | Version | Purpose |
-|------|---------|---------|
-| Node.js | 20+ | Monorepo runtime |
-| pnpm | 9+ | Package manager |
-| Rust stable | latest | Tauri desktop builds |
-| nmap | 7+ | Scan engine (desktop) |
-| Supabase CLI | latest | Local PostgreSQL (Tier 2+) |
-| Doppler CLI | latest | Secrets (zero committed `.env`) |
-| GitHub CLI | latest | CI babysit / PR workflow |
+## Use it
 
-Install helpers (Windows):
+| You want                          | Do this                                                                                                                                              |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A scan on this computer           | Run the desktop app. Check authorization. Leave the lab fixture on for a sample, or turn it off for a live scan of a target you are allowed to test. |
+| A local website database          | From the repo, run `pnpm local`. It starts Postgres and applies the migrations. You do not fill in a connection string.                              |
+| Several people, or a live website | Not yet. Cloud accounts and paid checkout wait until this app is functional and has a market.                                                        |
+
+Live scans need [Nmap](https://nmap.org/) installed. A lab fixture scan does not.
+
+Package an unsigned Windows installer from the repo:
 
 ```powershell
-winget install Rustlang.Rustup
-winget install Insecure.Nmap
-scoop install supabase
-winget install doppler.doppler
+pnpm package:desktop
 ```
 
-## Quick start
+A signed installer waits on a Windows code-signing certificate.
+
+## Run the project
 
 ```powershell
-$env:Path = "C:\Program Files\nodejs;" + $env:Path
 pnpm install
 pnpm turbo run typecheck lint test
-pnpm --filter @sniffoutpro/web dev
-pnpm --filter @sniffoutpro/desktop tauri dev
+pnpm --filter @sniffoutpro/desktop dev
+pnpm local
 ```
 
-## Monorepo layout
+The desktop preview is `http://127.0.0.1:1420/`. The website is `http://127.0.0.1:3000/`.
+
+## Layout
 
 ```
-apps/
-  web/          Next.js 15 dashboard
-  desktop/      Tauri v2 scan agent
-packages/
-  config/       eslint, tsconfig, tailwind presets
-  types/        shared types + tier flags
-  db/           Drizzle schema (PostgreSQL)
-decisions/      ADRs
-docs/           architecture, scanning ethics, phase log
+apps/desktop     Tauri scanner. Local database. No account.
+apps/web         Next.js site for history, reports, and organizations.
+packages/api     tRPC API and tier checks.
+packages/db      Postgres schema and the local scanner database.
+packages/scan-engine
+docs             User guide, operator notes, and the finish plan.
 ```
 
-## Tier matrix
+Read [docs/USER-GUIDE.md](docs/USER-GUIDE.md) for consent, schedules, and the Supabase steps for a later live site. Read [docs/SCANNING.md](docs/SCANNING.md) before any live scan.
 
-| Tier | Cloud | Auth | History | Reports | Multi-tenant |
-|------|-------|------|---------|---------|--------------|
-| Personal | — | — | — | — | — |
-| Workstation | ✓ | ✓ | ✓ | — | — |
-| Consultant | ✓ | ✓ | ✓ | ✓ | — |
-| Admin | ✓ | ✓ | ✓ | ✓ | ✓ |
+## Rules
 
-## Secrets (Doppler)
-
-```powershell
-doppler setup --project sniffoutpro --config dev
-doppler run -- pnpm --filter @sniffoutpro/web dev
-```
-
-No `.env` files are committed. See `doppler.yaml` for project stub.
-
-## Local database
-
-```powershell
-supabase start
-```
-
-Default Postgres: `postgresql://postgres:postgres@127.0.0.1:54322/postgres`
-
-## Ethical use
-
-Read [docs/SCANNING.md](docs/SCANNING.md) before running any scan. You must own or have written authorization for all targets.
-
-## Development phases
-
-Phase 0 (scaffold) → **Gate G1** → Phase 1 (core infra) → … → Phase 6 (ship).
-
-See [docs/PHASE-LOG.md](docs/PHASE-LOG.md) for execution evidence.
+Scan only targets you own or have written permission to test. The health check stays public. Paid checkout and cloud sign-in are not part of the base app.

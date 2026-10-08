@@ -1,42 +1,54 @@
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
-import { appRouter, createContext, createLogger, resolveRequestAuth } from '@sniffoutpro/api';
-import type { Tier } from '@sniffoutpro/types';
+import {
+  appRouter,
+  createContext,
+  createLogger,
+  rememberSignedInUser,
+  resolveRequestAuth,
+  resolveUserTier,
+} from '@sniffoutpro/api';
 import { getDb } from '@/lib/db';
+import { publicTrpcCorsHeaders } from '@/lib/public-cors';
+import { readSessionAccessToken } from '@/lib/supabase-server';
 
 const logger = createLogger('web-trpc');
 
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'content-type, authorization',
-};
-
-function resolveTier(): Tier {
-  const tier = process.env['SNIFFOUT_TIER'];
-  if (tier === 'WORKSTATION' || tier === 'CONSULTANT' || tier === 'ADMIN') {
-    return tier;
+async function withSessionBearer(req: Request): Promise<Request> {
+  if (req.headers.get('authorization') !== null) {
+    return req;
   }
-  return 'WORKSTATION';
+  const token = await readSessionAccessToken();
+  if (token === null) {
+    return req;
+  }
+  const headers = new Headers(req.headers);
+  headers.set('authorization', `Bearer ${token}`);
+  return new Request(req, { headers });
 }
 
 async function handler(req: Request) {
-  const auth = await resolveRequestAuth(req);
+  const auth = await resolveRequestAuth(await withSessionBearer(req));
+  const db = getDb();
+  if (auth.userId !== null) {
+    await rememberSignedInUser(db, { id: auth.userId, email: auth.email });
+  }
+  const tier = await resolveUserTier(db, auth.userId);
   const response = await fetchRequestHandler({
     endpoint: '/api/trpc',
     req,
     router: appRouter,
     createContext: () =>
       createContext({
-        db: getDb(),
+        db,
         logger,
         userId: auth.userId,
-        tier: resolveTier(),
+        tier,
         syncAuthorized: auth.syncAuthorized,
       }),
   });
 
   const headers = new Headers(response.headers);
-  for (const [key, value] of Object.entries(corsHeaders)) {
+  for (const [key, value] of Object.entries(publicTrpcCorsHeaders)) {
     headers.set(key, value);
   }
 
@@ -47,7 +59,7 @@ async function handler(req: Request) {
 }
 
 export function OPTIONS() {
-  return new Response(null, { status: 204, headers: corsHeaders });
+  return new Response(null, { status: 204, headers: publicTrpcCorsHeaders });
 }
 
 export { handler as GET, handler as POST };

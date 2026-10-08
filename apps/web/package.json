@@ -16,6 +16,8 @@
     "@sniffoutpro/db": "workspace:*",
     "@sniffoutpro/types": "workspace:*",
     "@sniffoutpro/ui": "workspace:*",
+    "@supabase/ssr": "^0.6.1",
+    "@supabase/supabase-js": "^2.49.8",
     "@tanstack/react-query": "^5.74.4",
     "@trpc/client": "^11.1.0",
     "@trpc/react-query": "^11.1.0",
