@@ -3,6 +3,7 @@ import {
   appRouter,
   createContext,
   createLogger,
+  rememberSignedInUser,
   resolveRequestAuth,
   resolveUserTier,
 } from '@sniffoutpro/api';
@@ -28,6 +29,9 @@ async function withSessionBearer(req: Request): Promise<Request> {
 async function handler(req: Request) {
   const auth = await resolveRequestAuth(await withSessionBearer(req));
   const db = getDb();
+  if (auth.userId !== null) {
+    await rememberSignedInUser(db, { id: auth.userId, email: auth.email });
+  }
   const tier = await resolveUserTier(db, auth.userId);
   const response = await fetchRequestHandler({
     endpoint: '/api/trpc',

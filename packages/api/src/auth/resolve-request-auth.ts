@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 
 export type ResolvedAuth = {
   userId: string | null;
+  email: string | null;
   syncAuthorized: boolean;
 };
 
@@ -28,7 +29,9 @@ function tokensEqual(a: string, b: string): boolean {
   return timingSafeEqual(aBuf, bBuf);
 }
 
-async function resolveSupabaseUserId(bearer: string): Promise<string | null> {
+async function resolveSupabaseUser(
+  bearer: string,
+): Promise<{ id: string; email: string | null } | null> {
   const supabaseUrl = process.env['SUPABASE_URL'];
   const supabaseAnonKey = process.env['SUPABASE_ANON_KEY'];
   if (supabaseUrl === undefined || supabaseAnonKey === undefined) {
@@ -45,8 +48,12 @@ async function resolveSupabaseUserId(bearer: string): Promise<string | null> {
     if (!res.ok) {
       return null;
     }
-    const body = (await res.json()) as { id?: string };
-    return typeof body.id === 'string' ? body.id : null;
+    const body = (await res.json()) as { id?: string; email?: string };
+    if (typeof body.id !== 'string') {
+      return null;
+    }
+    const email = typeof body.email === 'string' && body.email !== '' ? body.email : null;
+    return { id: body.id, email };
   } catch {
     return null;
   }
@@ -55,9 +62,12 @@ async function resolveSupabaseUserId(bearer: string): Promise<string | null> {
 export async function resolveRequestAuth(req: Request): Promise<ResolvedAuth> {
   const bearer = readBearerToken(req);
   let userId: string | null = null;
+  let email: string | null = null;
 
   if (bearer !== null) {
-    userId = await resolveSupabaseUserId(bearer);
+    const user = await resolveSupabaseUser(bearer);
+    userId = user?.id ?? null;
+    email = user?.email ?? null;
   }
 
   const syncToken = process.env['SNIFFOUT_SYNC_TOKEN'];
@@ -69,11 +79,11 @@ export async function resolveRequestAuth(req: Request): Promise<ResolvedAuth> {
     console.error(
       '[auth] SNIFFOUT_SYNC_TOKEN is unset/empty in production — syncAuthorized=false (fail-closed)',
     );
-    return { userId, syncAuthorized: false };
+    return { userId, email, syncAuthorized: false };
   }
 
   const syncAuthorized =
     userId !== null || bearerMatchesToken || (!isProductionRuntime() && !tokenConfigured);
 
-  return { userId, syncAuthorized };
+  return { userId, email, syncAuthorized };
 }

@@ -10,3 +10,13 @@ export async function ensureAuthUser(
     .values({ id: user.id, email: user.email })
     .onConflictDoNothing({ target: users.id });
 }
+
+export async function rememberSignedInUser(
+  db: Database,
+  user: { id: string; email: string | null },
+): Promise<void> {
+  if (user.email === null || user.email === '') {
+    return;
+  }
+  await ensureAuthUser(db, { id: user.id, email: user.email });
+}
