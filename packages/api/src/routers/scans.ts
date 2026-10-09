@@ -23,7 +23,7 @@ import {
   type ScanRun,
 } from '@sniffoutpro/types';
 import { assertRateLimit } from '../rate-limit.js';
-import { router, protectedProcedure } from '../trpc.js';
+import { requireTierFeature, router, protectedProcedure } from '../trpc.js';
 
 const SyncScanInputSchema = z.object({
   consentText: z.string().min(1),
@@ -217,121 +217,130 @@ export const scansRouter = router({
       return loadScanDetail(ctx.db, input.id);
     }),
 
-  sync: protectedProcedure.input(SyncScanInputSchema).mutation(async ({ ctx, input }) => {
-    const { scanRun, consentText, rawOutput } = input;
-    ctx.logger.info({ scanId: scanRun.id, targets: scanRun.targets }, 'scans.sync');
-    const memberRows =
-      ctx.userId === null
-        ? []
-        : await ctx.db
-            .select({ orgId: memberships.orgId, role: memberships.role })
-            .from(memberships)
-            .where(and(eq(memberships.userId, ctx.userId), eq(memberships.status, 'active')));
-    let orgId: string | null = null;
-    if (input.orgId !== undefined) {
-      const target = memberRows.find((row) => row.orgId === input.orgId);
-      const role = parseOrgRole(target?.role);
-      if (role === null || !canSync(role)) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Your role cannot upload scans to that organization',
-        });
+  sync: requireTierFeature('cloudSync')
+    .input(SyncScanInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { scanRun, consentText, rawOutput } = input;
+      ctx.logger.info({ scanId: scanRun.id, targets: scanRun.targets }, 'scans.sync');
+      const memberRows =
+        ctx.userId === null
+          ? []
+          : await ctx.db
+              .select({ orgId: memberships.orgId, role: memberships.role })
+              .from(memberships)
+              .where(and(eq(memberships.userId, ctx.userId), eq(memberships.status, 'active')));
+      // Someone whose every organization role is viewer may not upload at all, not even personally.
+      const roles = memberRows.map((row) => parseOrgRole(row.role));
+      if (roles.length > 0 && !roles.some((role) => role !== null && canSync(role))) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Viewers cannot upload scans' });
       }
-      orgId = input.orgId;
-    }
-
-    await ctx.db.transaction(async (tx) => {
-      const scopeId = crypto.randomUUID();
-      await tx.insert(authorizationScopes).values({
-        id: scopeId,
-        userId: ctx.userId,
-        targets: scanRun.targets,
-        consentText,
-        consentedAt: new Date(scanRun.startedAt),
-      });
-
-      await tx.insert(scanRuns).values({
-        id: scanRun.id,
-        orgId,
-        authorizationScopeId: scopeId,
-        status: scanRun.status,
-        targets: scanRun.targets,
-        intensity: scanRun.intensity,
-        startedAt: new Date(scanRun.startedAt),
-        completedAt: scanRun.completedAt !== undefined ? new Date(scanRun.completedAt) : null,
-        rawOutput: rawOutput ?? null,
-        normalizedOutput: toNormalizedOutput(scanRun),
-      });
-
-      const hostIdByIp = new Map<string, string>();
-      const serviceIdByKey = new Map<string, string>();
-
-      for (const host of scanRun.hosts) {
-        const hostId = crypto.randomUUID();
-        hostIdByIp.set(host.ip, hostId);
-        await tx.insert(hosts).values({
-          id: hostId,
-          scanRunId: scanRun.id,
-          orgId,
-          ip: host.ip,
-          hostname: host.hostname ?? null,
-          mac: host.mac ?? null,
-          os: host.os ?? null,
-          osConfidence: host.osConfidence ?? null,
-        });
-
-        for (const svc of host.services) {
-          const serviceId = crypto.randomUUID();
-          serviceIdByKey.set(`${host.ip}:${String(svc.port)}:${svc.protocol}`, serviceId);
-          await tx.insert(services).values({
-            id: serviceId,
-            hostId,
-            orgId,
-            port: svc.port,
-            protocol: svc.protocol,
-            product: svc.product ?? null,
-            version: svc.version ?? null,
-            banner: svc.banner ?? null,
+      let orgId: string | null = null;
+      if (input.orgId !== undefined) {
+        const target = memberRows.find((row) => row.orgId === input.orgId);
+        const role = parseOrgRole(target?.role);
+        if (role === null || !canSync(role)) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Your role cannot upload scans to that organization',
           });
         }
+        orgId = input.orgId;
       }
 
-      for (const finding of scanRun.findings) {
-        if (finding.cveId !== undefined) {
-          await tx
-            .insert(cveCache)
-            .values({
-              id: finding.cveId,
-              description: finding.description ?? null,
-              cvssScore: finding.cvssScore ?? null,
-              lastSyncedAt: new Date(),
-            })
-            .onConflictDoNothing();
-        }
-      }
-
-      for (const finding of scanRun.findings) {
-        const serviceKey =
-          finding.port !== undefined ? `${finding.hostIp}:${String(finding.port)}:tcp` : undefined;
-        await tx.insert(findings).values({
-          id: finding.id,
-          scanRunId: scanRun.id,
-          orgId,
-          hostId: hostIdByIp.get(finding.hostIp) ?? null,
-          serviceId: serviceKey !== undefined ? (serviceIdByKey.get(serviceKey) ?? null) : null,
-          cveId: finding.cveId ?? null,
-          title: finding.title,
-          severity: finding.severity,
-          cvssScore: finding.cvssScore ?? null,
-          riskScore: finding.riskScore,
-          description: finding.description ?? null,
-          port: finding.port ?? null,
+      await ctx.db.transaction(async (tx) => {
+        const scopeId = crypto.randomUUID();
+        await tx.insert(authorizationScopes).values({
+          id: scopeId,
+          userId: ctx.userId,
+          targets: scanRun.targets,
+          consentText,
+          consentedAt: new Date(scanRun.startedAt),
         });
-      }
-    });
 
-    return { ok: true as const, scanId: scanRun.id };
-  }),
+        await tx.insert(scanRuns).values({
+          id: scanRun.id,
+          orgId,
+          authorizationScopeId: scopeId,
+          status: scanRun.status,
+          targets: scanRun.targets,
+          intensity: scanRun.intensity,
+          startedAt: new Date(scanRun.startedAt),
+          completedAt: scanRun.completedAt !== undefined ? new Date(scanRun.completedAt) : null,
+          rawOutput: rawOutput ?? null,
+          normalizedOutput: toNormalizedOutput(scanRun),
+        });
+
+        const hostIdByIp = new Map<string, string>();
+        const serviceIdByKey = new Map<string, string>();
+
+        for (const host of scanRun.hosts) {
+          const hostId = crypto.randomUUID();
+          hostIdByIp.set(host.ip, hostId);
+          await tx.insert(hosts).values({
+            id: hostId,
+            scanRunId: scanRun.id,
+            orgId,
+            ip: host.ip,
+            hostname: host.hostname ?? null,
+            mac: host.mac ?? null,
+            os: host.os ?? null,
+            osConfidence: host.osConfidence ?? null,
+          });
+
+          for (const svc of host.services) {
+            const serviceId = crypto.randomUUID();
+            serviceIdByKey.set(`${host.ip}:${String(svc.port)}:${svc.protocol}`, serviceId);
+            await tx.insert(services).values({
+              id: serviceId,
+              hostId,
+              orgId,
+              port: svc.port,
+              protocol: svc.protocol,
+              product: svc.product ?? null,
+              version: svc.version ?? null,
+              banner: svc.banner ?? null,
+            });
+          }
+        }
+
+        for (const finding of scanRun.findings) {
+          if (finding.cveId !== undefined) {
+            await tx
+              .insert(cveCache)
+              .values({
+                id: finding.cveId,
+                description: finding.description ?? null,
+                cvssScore: finding.cvssScore ?? null,
+                lastSyncedAt: new Date(),
+              })
+              .onConflictDoNothing();
+          }
+        }
+
+        for (const finding of scanRun.findings) {
+          const serviceKey =
+            finding.port !== undefined
+              ? `${finding.hostIp}:${String(finding.port)}:tcp`
+              : undefined;
+          await tx.insert(findings).values({
+            id: finding.id,
+            scanRunId: scanRun.id,
+            orgId,
+            hostId: hostIdByIp.get(finding.hostIp) ?? null,
+            serviceId: serviceKey !== undefined ? (serviceIdByKey.get(serviceKey) ?? null) : null,
+            cveId: finding.cveId ?? null,
+            title: finding.title,
+            severity: finding.severity,
+            cvssScore: finding.cvssScore ?? null,
+            riskScore: finding.riskScore,
+            description: finding.description ?? null,
+            port: finding.port ?? null,
+          });
+        }
+      });
+
+      return { ok: true as const, scanId: scanRun.id };
+    }),
 
   diff: protectedProcedure
     .input(
