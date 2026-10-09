@@ -107,7 +107,7 @@ describe('organization invite', () => {
       role: 'analyst',
     });
     expect(result).toEqual({ orgId: ORG_A, userId: INVITEE, role: 'analyst', updated: false });
-    expect(read()).toEqual({ orgId: ORG_A, userId: INVITEE, role: 'analyst' });
+    expect(read()).toEqual({ orgId: ORG_A, userId: INVITEE, role: 'analyst', status: 'pending' });
   });
 
   it('changes the role when that person is already a member', async () => {

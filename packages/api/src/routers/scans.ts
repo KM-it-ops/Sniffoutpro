@@ -1,4 +1,5 @@
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { TRPCError } from '@trpc/server';
+import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Database } from '@sniffoutpro/db';
 import {
@@ -10,7 +11,7 @@ import {
   scanRuns,
   services,
 } from '@sniffoutpro/db/schema';
-import { scansVisibleTo, uploadOrgId } from '../org/access.js';
+import { canSync, parseOrgRole } from '../org/access.js';
 import { assertScanInCallerOrg } from '../org/scan-guard.js';
 import { diffScanRuns } from '@sniffoutpro/scan-engine';
 import {
@@ -28,6 +29,8 @@ const SyncScanInputSchema = z.object({
   consentText: z.string().min(1),
   scanRun: ScanRunSchema,
   rawOutput: z.string().optional(),
+  // Upload into this organization; without it the scan stays personal.
+  orgId: z.string().uuid().optional(),
 });
 
 /**
@@ -153,7 +156,7 @@ export const scansRouter = router({
       const memberRows = await ctx.db
         .select({ orgId: memberships.orgId })
         .from(memberships)
-        .where(eq(memberships.userId, ctx.userId));
+        .where(and(eq(memberships.userId, ctx.userId), eq(memberships.status, 'active')));
       const orgIds = memberRows.map((row) => row.orgId);
       if (orgIds.length === 0) {
         return ctx.db
@@ -183,10 +186,17 @@ export const scansRouter = router({
           completedAt: scanRuns.completedAt,
         })
         .from(scanRuns)
-        .where(inArray(scanRuns.orgId, orgIds))
+        .innerJoin(authorizationScopes, eq(scanRuns.authorizationScopeId, authorizationScopes.id))
+        // The caller's organizations' scans, plus their own personal uploads.
+        .where(
+          or(
+            inArray(scanRuns.orgId, orgIds),
+            and(isNull(scanRuns.orgId), eq(authorizationScopes.userId, ctx.userId)),
+          ),
+        )
         .orderBy(desc(scanRuns.startedAt))
         .limit(limit);
-      return scansVisibleTo(rows, orgIds);
+      return rows;
     }),
 
   getDetail: protectedProcedure
@@ -214,10 +224,21 @@ export const scansRouter = router({
       ctx.userId === null
         ? []
         : await ctx.db
-            .select({ orgId: memberships.orgId })
+            .select({ orgId: memberships.orgId, role: memberships.role })
             .from(memberships)
-            .where(eq(memberships.userId, ctx.userId));
-    const orgId = uploadOrgId(memberRows.map((row) => row.orgId));
+            .where(and(eq(memberships.userId, ctx.userId), eq(memberships.status, 'active')));
+    let orgId: string | null = null;
+    if (input.orgId !== undefined) {
+      const target = memberRows.find((row) => row.orgId === input.orgId);
+      const role = parseOrgRole(target?.role);
+      if (role === null || !canSync(role)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Your role cannot upload scans to that organization',
+        });
+      }
+      orgId = input.orgId;
+    }
 
     await ctx.db.transaction(async (tx) => {
       const scopeId = crypto.randomUUID();
