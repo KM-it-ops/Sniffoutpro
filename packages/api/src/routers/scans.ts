@@ -33,6 +33,16 @@ const SyncScanInputSchema = z.object({
   orgId: z.string().uuid().optional(),
 });
 
+/** A scan or finding id that is already taken: say so plainly instead of passing on the database error. */
+function rethrowDuplicateScan(err: unknown): never {
+  for (let cur: unknown = err; cur instanceof Error; cur = cur.cause) {
+    if ((cur as Error & { code?: unknown }).code === '23505') {
+      throw new TRPCError({ code: 'CONFLICT', message: 'That scan was already uploaded.' });
+    }
+  }
+  throw err;
+}
+
 /**
  * C3 (docs/AUDIT-RESIDUAL-2026-07-09.md): persist fixture provenance through
  * cloud sync so fixture data is never mistaken for live findings.
@@ -217,37 +227,36 @@ export const scansRouter = router({
       return loadScanDetail(ctx.db, input.id);
     }),
 
-  sync: syncProcedure
-    .input(SyncScanInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const { scanRun, consentText, rawOutput } = input;
-      ctx.logger.info({ scanId: scanRun.id, targets: scanRun.targets }, 'scans.sync');
-      const memberRows =
-        ctx.userId === null
-          ? []
-          : await ctx.db
-              .select({ orgId: memberships.orgId, role: memberships.role })
-              .from(memberships)
-              .where(and(eq(memberships.userId, ctx.userId), eq(memberships.status, 'active')));
-      // Someone whose every organization role is viewer may not upload at all, not even personally.
-      const roles = memberRows.map((row) => parseOrgRole(row.role));
-      if (roles.length > 0 && !roles.some((role) => role !== null && canSync(role))) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Viewers cannot upload scans' });
+  sync: syncProcedure.input(SyncScanInputSchema).mutation(async ({ ctx, input }) => {
+    const { scanRun, consentText, rawOutput } = input;
+    ctx.logger.info({ scanId: scanRun.id, targets: scanRun.targets }, 'scans.sync');
+    const memberRows =
+      ctx.userId === null
+        ? []
+        : await ctx.db
+            .select({ orgId: memberships.orgId, role: memberships.role })
+            .from(memberships)
+            .where(and(eq(memberships.userId, ctx.userId), eq(memberships.status, 'active')));
+    // Someone whose every organization role is viewer may not upload at all, not even personally.
+    const roles = memberRows.map((row) => parseOrgRole(row.role));
+    if (roles.length > 0 && !roles.some((role) => role !== null && canSync(role))) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Viewers cannot upload scans' });
+    }
+    let orgId: string | null = null;
+    if (input.orgId !== undefined) {
+      const target = memberRows.find((row) => row.orgId === input.orgId);
+      const role = parseOrgRole(target?.role);
+      if (role === null || !canSync(role)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Your role cannot upload scans to that organization',
+        });
       }
-      let orgId: string | null = null;
-      if (input.orgId !== undefined) {
-        const target = memberRows.find((row) => row.orgId === input.orgId);
-        const role = parseOrgRole(target?.role);
-        if (role === null || !canSync(role)) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'Your role cannot upload scans to that organization',
-          });
-        }
-        orgId = input.orgId;
-      }
+      orgId = input.orgId;
+    }
 
-      await ctx.db.transaction(async (tx) => {
+    await ctx.db
+      .transaction(async (tx) => {
         const scopeId = crypto.randomUUID();
         await tx.insert(authorizationScopes).values({
           id: scopeId,
@@ -337,10 +346,11 @@ export const scansRouter = router({
             port: finding.port ?? null,
           });
         }
-      });
+      })
+      .catch(rethrowDuplicateScan);
 
-      return { ok: true as const, scanId: scanRun.id };
-    }),
+    return { ok: true as const, scanId: scanRun.id };
+  }),
 
   diff: protectedProcedure
     .input(
