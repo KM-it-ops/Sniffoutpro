@@ -61,7 +61,13 @@ export const organizationsRouter = router({
       const [caller] = await ctx.db
         .select({ role: memberships.role })
         .from(memberships)
-        .where(and(eq(memberships.userId, userId), eq(memberships.orgId, input.orgId)))
+        .where(
+          and(
+            eq(memberships.userId, userId),
+            eq(memberships.orgId, input.orgId),
+            eq(memberships.status, 'active'),
+          ),
+        )
         .limit(1);
       const role = parseOrgRole(caller?.role);
       if (role === null || !canInvite(role)) {
@@ -85,7 +91,13 @@ export const organizationsRouter = router({
           const adminRows = await ctx.db
             .select({ userId: memberships.userId })
             .from(memberships)
-            .where(and(eq(memberships.orgId, input.orgId), eq(memberships.role, 'admin')))
+            .where(
+              and(
+                eq(memberships.orgId, input.orgId),
+                eq(memberships.role, 'admin'),
+                eq(memberships.status, 'active'),
+              ),
+            )
             .limit(2);
           if (
             removesOnlyAdmin({
@@ -111,6 +123,8 @@ export const organizationsRouter = router({
         orgId: input.orgId,
         userId: invitee.id,
         role: input.role,
+        // Grants nothing until the invited person accepts it.
+        status: 'pending',
       });
       return { orgId: input.orgId, userId: invitee.id, role: input.role, updated: false as const };
     }),
@@ -128,7 +142,13 @@ export const organizationsRouter = router({
       const [caller] = await ctx.db
         .select({ role: memberships.role })
         .from(memberships)
-        .where(and(eq(memberships.userId, callerId), eq(memberships.orgId, input.orgId)))
+        .where(
+          and(
+            eq(memberships.userId, callerId),
+            eq(memberships.orgId, input.orgId),
+            eq(memberships.status, 'active'),
+          ),
+        )
         .limit(1);
       const role = parseOrgRole(caller?.role);
       if (role === null || !canInvite(role)) {
@@ -146,7 +166,13 @@ export const organizationsRouter = router({
         const adminRows = await ctx.db
           .select({ userId: memberships.userId })
           .from(memberships)
-          .where(and(eq(memberships.orgId, input.orgId), eq(memberships.role, 'admin')))
+          .where(
+            and(
+              eq(memberships.orgId, input.orgId),
+              eq(memberships.role, 'admin'),
+              eq(memberships.status, 'active'),
+            ),
+          )
           .limit(2);
         if (
           removesOnlyAdmin({
@@ -167,5 +193,35 @@ export const organizationsRouter = router({
         .set({ role: input.role })
         .where(and(eq(memberships.orgId, input.orgId), eq(memberships.userId, input.userId)));
       return { orgId: input.orgId, userId: input.userId, role: input.role };
+    }),
+
+  myInvites: protectedProcedure.query(async ({ ctx }) => {
+    const userId = requireUserId(ctx.userId);
+    return ctx.db
+      .select({ orgId: memberships.orgId, orgName: organizations.name, role: memberships.role })
+      .from(memberships)
+      .innerJoin(organizations, eq(memberships.orgId, organizations.id))
+      .where(and(eq(memberships.userId, userId), eq(memberships.status, 'pending')));
+  }),
+
+  acceptInvite: protectedProcedure
+    .input(z.object({ orgId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const userId = requireUserId(ctx.userId);
+      const [row] = await ctx.db
+        .update(memberships)
+        .set({ status: 'active' })
+        .where(
+          and(
+            eq(memberships.userId, userId),
+            eq(memberships.orgId, input.orgId),
+            eq(memberships.status, 'pending'),
+          ),
+        )
+        .returning({ role: memberships.role });
+      if (row === undefined) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'No invite from that organization' });
+      }
+      return { orgId: input.orgId, role: row.role };
     }),
 });

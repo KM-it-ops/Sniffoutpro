@@ -1,9 +1,5 @@
 export type OrgRole = 'admin' | 'analyst' | 'viewer';
 
-export function uploadOrgId(orgIds: readonly string[]): string | null {
-  return orgIds[0] ?? null;
-}
-
 export function scansVisibleTo<T extends { orgId: string | null }>(
   rows: T[],
   orgIds: readonly string[],
@@ -29,6 +25,10 @@ export function removesOnlyAdmin(input: {
 }
 
 export function canSchedule(role: OrgRole): boolean {
+  return role === 'admin' || role === 'analyst';
+}
+
+export function canSync(role: OrgRole): boolean {
   return role === 'admin' || role === 'analyst';
 }
 

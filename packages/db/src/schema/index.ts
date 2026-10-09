@@ -39,6 +39,10 @@ export const memberships = pgTable(
       .notNull()
       .references(() => users.id),
     role: text('role', { enum: ['admin', 'analyst', 'viewer'] }).notNull(),
+    // An invite is 'pending' until the invited person accepts it; only 'active' rows grant anything.
+    status: text('status', { enum: ['pending', 'active'] })
+      .notNull()
+      .default('active'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
