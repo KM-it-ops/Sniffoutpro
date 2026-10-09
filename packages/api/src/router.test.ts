@@ -74,7 +74,7 @@ describe('tRPC api', () => {
       logger,
       userId,
       tier: 'WORKSTATION',
-      syncAuthorized: false,
+      syncAuthorized: true,
     });
 
     const scanId = crypto.randomUUID();
