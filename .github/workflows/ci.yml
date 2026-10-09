@@ -43,7 +43,9 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        # Official image via the ECR Public mirror; Docker Hub rate-limits
+        # unauthenticated pulls from hosted runners.
+        image: public.ecr.aws/docker/library/postgres:16
         env:
           POSTGRES_PASSWORD: postgres
         ports:
