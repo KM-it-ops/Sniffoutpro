@@ -31,7 +31,8 @@ export function requireTierFeature(feature: TierFeature) {
   });
 }
 
-export const syncProcedure = t.procedure.use(({ ctx, next }) => {
+// Upload gate: a signed-in user on a tier with cloud sync, holding sync authorization.
+export const syncProcedure = requireTierFeature('cloudSync').use(({ ctx, next }) => {
   if (!ctx.syncAuthorized) {
     throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Sync authorization required' });
   }

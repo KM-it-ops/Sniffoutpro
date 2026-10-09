@@ -23,7 +23,7 @@ import {
   type ScanRun,
 } from '@sniffoutpro/types';
 import { assertRateLimit } from '../rate-limit.js';
-import { requireTierFeature, router, protectedProcedure } from '../trpc.js';
+import { router, protectedProcedure, syncProcedure } from '../trpc.js';
 
 const SyncScanInputSchema = z.object({
   consentText: z.string().min(1),
@@ -217,7 +217,7 @@ export const scansRouter = router({
       return loadScanDetail(ctx.db, input.id);
     }),
 
-  sync: requireTierFeature('cloudSync')
+  sync: syncProcedure
     .input(SyncScanInputSchema)
     .mutation(async ({ ctx, input }) => {
       const { scanRun, consentText, rawOutput } = input;
