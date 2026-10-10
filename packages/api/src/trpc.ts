@@ -27,7 +27,14 @@ const asMember = t.middleware(({ ctx, next }) => {
   if (userId === null) {
     throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Authentication required' });
   }
-  return withMemberRole(ctx.db, userId, (db) => next({ ctx: { ...ctx, db } }));
+  return withMemberRole(ctx.db, userId, async (db) => {
+    const result = await next({ ctx: { ...ctx, db } });
+    // next() reports a failed procedure instead of throwing; throw it so the transaction rolls back.
+    if (!result.ok) {
+      throw result.error;
+    }
+    return result;
+  });
 });
 
 function tierGate(feature: TierFeature) {
