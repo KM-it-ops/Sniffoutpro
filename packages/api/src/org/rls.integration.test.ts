@@ -1,5 +1,5 @@
 // Needs local Postgres (docker compose -f docker/docker-compose.dev.yml up -d) with migrations applied.
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDb, withMemberRole } from '@sniffoutpro/db';
 import {
@@ -26,6 +26,19 @@ const SCOPE_A = 'a0000003-0000-4000-8000-000000000003';
 const SCOPE_B = 'b0000003-0000-4000-8000-000000000003';
 const SCAN_A = 'a0000004-0000-4000-8000-000000000004';
 const SCAN_B = 'b0000004-0000-4000-8000-000000000004';
+
+// Passes only when the database itself refused the statement (insufficient_privilege), not on any other error.
+async function refused(work: Promise<unknown>) {
+  const err: unknown = await work.then(
+    () => undefined,
+    (caught: unknown) => caught,
+  );
+  let code: unknown;
+  for (let cur: unknown = err; cur instanceof Error; cur = cur.cause) {
+    code = (cur as Error & { code?: unknown }).code ?? code;
+  }
+  expect(code).toBe('42501');
+}
 
 describe('sniffout_member row security on the API connection', () => {
   const db = createDb(DATABASE_URL);
@@ -89,7 +102,9 @@ describe('sniffout_member row security on the API connection', () => {
       await db.delete(scanRuns).where(inArray(scanRuns.id, [SCAN_A, SCAN_B]));
       await db.delete(authorizationScopes).where(inArray(authorizationScopes.id, [SCOPE_A, SCOPE_B]));
       await db.delete(memberships).where(inArray(memberships.orgId, [ORG_A, ORG_B]));
+      await db.delete(memberships).where(eq(memberships.userId, USER_C));
       await db.delete(organizations).where(inArray(organizations.id, [ORG_A, ORG_B]));
+      await db.delete(organizations).where(eq(organizations.slug, 'rls-org-c'));
       await db.delete(users).where(inArray(users.id, [USER_A, USER_B, USER_C]));
     }
     await db.close();
@@ -118,11 +133,11 @@ describe('sniffout_member row security on the API connection', () => {
     if (!ready) {
       ctx.skip();
     }
-    await expect(
+    await refused(
       withMemberRole(db, USER_A, (tx) =>
         tx.insert(networks).values({ orgId: ORG_B, name: 'planted', cidr: '10.9.0.0/24' }),
       ),
-    ).rejects.toThrow();
+    );
     const planted = await db.select({ id: networks.id }).from(networks).where(eq(networks.orgId, ORG_B));
     expect(planted).toEqual([]);
   });
@@ -133,12 +148,10 @@ describe('sniffout_member row security on the API connection', () => {
     }
     await db.insert(memberships).values({ orgId: ORG_A, userId: USER_C, role: 'viewer', status: 'pending' });
     const asC = (query: ReturnType<typeof sql>) => withMemberRole(db, USER_C, (tx) => tx.execute(query));
-    await expect(
-      asC(sql`update memberships set status = 'active', role = 'admin' where user_id = ${USER_C}::uuid`),
-    ).rejects.toThrow();
-    await expect(
+    await refused(asC(sql`update memberships set status = 'active', role = 'admin' where user_id = ${USER_C}::uuid`));
+    await refused(
       asC(sql`update memberships set status = 'active', org_id = ${ORG_B}::uuid where user_id = ${USER_C}::uuid`),
-    ).rejects.toThrow();
+    );
     const stillPending = await db
       .select({ orgId: memberships.orgId, role: memberships.role, status: memberships.status })
       .from(memberships)
@@ -157,15 +170,19 @@ describe('sniffout_member row security on the API connection', () => {
     }
     await db.delete(memberships).where(eq(memberships.userId, USER_C));
     const asAdmin = (query: ReturnType<typeof sql>) => withMemberRole(db, USER_A, (tx) => tx.execute(query));
-    await expect(
+    await refused(
       asAdmin(sql`insert into memberships (org_id, user_id, role, status) values (${ORG_A}::uuid, ${USER_C}::uuid, 'viewer', 'active')`),
-    ).rejects.toThrow();
+    );
+    // Nor can an outsider make themselves admin of an organization that already has members.
+    await refused(
+      withMemberRole(db, USER_B, (tx) =>
+        tx.execute(sql`insert into memberships (org_id, user_id, role, status) values (${ORG_A}::uuid, ${USER_B}::uuid, 'admin', 'active')`),
+      ),
+    );
     await asAdmin(
       sql`insert into memberships (org_id, user_id, role, status) values (${ORG_A}::uuid, ${USER_C}::uuid, 'viewer', 'pending')`,
     );
-    await expect(
-      asAdmin(sql`update memberships set status = 'active' where user_id = ${USER_C}::uuid`),
-    ).rejects.toThrow();
+    await refused(asAdmin(sql`update memberships set status = 'active' where user_id = ${USER_C}::uuid`));
     // An admin may still change a role in their own organization.
     await asAdmin(sql`update memberships set role = 'analyst' where user_id = ${USER_C}::uuid`);
     const [row] = await db
@@ -173,6 +190,18 @@ describe('sniffout_member row security on the API connection', () => {
       .from(memberships)
       .where(eq(memberships.userId, USER_C));
     expect(row).toEqual({ role: 'analyst', status: 'pending' });
+  });
+
+  it('still lets a signed-in person create an organization and become its first admin', async (ctx) => {
+    if (!ready) {
+      ctx.skip();
+    }
+    const org = await as(USER_C).organizations.create({ name: 'RLS Org C', slug: 'rls-org-c' });
+    const [row] = await db
+      .select({ role: memberships.role, status: memberships.status })
+      .from(memberships)
+      .where(and(eq(memberships.orgId, org.id), eq(memberships.userId, USER_C)));
+    expect(row).toEqual({ role: 'admin', status: 'active' });
   });
 
   it('rolls back the writes of a procedure that fails after writing', async (ctx) => {
