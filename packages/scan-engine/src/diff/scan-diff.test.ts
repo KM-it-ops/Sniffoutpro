@@ -48,4 +48,28 @@ describe('diffScanRuns', () => {
     expect(diff.resolvedFindings[0]?.cveId).toBe('CVE-2021-44228');
     expect(diff.unchangedCount).toBe(0);
   });
+
+  it('matches findings without a CVE or port by title, host and empty port', () => {
+    const portless = {
+      id: '00000000-0000-4000-8000-000000000020',
+      title: 'Weak TLS configuration',
+      severity: 'medium' as const,
+      riskScore: 40,
+      hostIp: '127.0.0.1',
+    };
+    const base: ScanRun = { ...baseRun, findings: [...baseRun.findings, portless] };
+    const compare: ScanRun = {
+      ...baseRun,
+      id: '00000000-0000-4000-8000-000000000003',
+      findings: [
+        { ...portless, id: '00000000-0000-4000-8000-000000000021' },
+        { ...portless, id: '00000000-0000-4000-8000-000000000022', port: 443 },
+      ],
+    };
+
+    const diff = diffScanRuns(base, compare);
+    expect(diff.unchangedCount).toBe(1);
+    expect(diff.newFindings.map((f) => f.port)).toEqual([443]);
+    expect(diff.resolvedFindings.map((f) => f.cveId)).toEqual(['CVE-2021-44228']);
+  });
 });
