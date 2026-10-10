@@ -1,14 +1,9 @@
-name: Deploy Production
+name: Migrate Production DB
 
+# Manual only. Vercel's Git integration publishes every push to main; this
+# workflow applies database migrations on demand and then smoke-tests prod.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'apps/web/**'
-      - 'packages/**'
-      - 'pnpm-lock.yaml'
-      - 'vercel.json'
 
 concurrency:
   group: deploy-production
@@ -57,28 +52,16 @@ jobs:
           node scripts/migrate-baseline.mjs
           pnpm --filter @sniffoutpro/db db:migrate
 
-  deploy:
-    needs: [verify, migrate]
+  smoke:
+    needs: migrate
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
-      # pnpm version comes from package.json "packageManager" (action-setup
-      # errors if both that field and a version input are specified)
-      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Deploy to Vercel
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          pnpm dlx vercel deploy --prod --yes --token "$VERCEL_TOKEN"
-      - name: Post-deploy smoke (verify-production)
+      - name: Post-migrate smoke (verify-production)
         env:
           SNIFFOUT_SYNC_TOKEN: ${{ secrets.SNIFFOUT_SYNC_TOKEN }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL || 'https://sniffoutpro-web.vercel.app' }}
