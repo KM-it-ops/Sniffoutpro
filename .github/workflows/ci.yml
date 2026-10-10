@@ -71,7 +71,7 @@ jobs:
         run: pnpm --filter @sniffoutpro/db db:migrate
       - run: pnpm turbo run test
       - name: Coverage thresholds (scan-engine)
-        run: pnpm --filter @sniffoutpro/scan-engine test:coverage -- --coverage.thresholds.lines=85 --coverage.thresholds.branches=80
+        run: pnpm --filter @sniffoutpro/scan-engine test:coverage --coverage.thresholds.lines=85 --coverage.thresholds.branches=80
       - name: Install Playwright browsers
         run: pnpm --filter @sniffoutpro/web exec playwright install --with-deps chromium
       - name: Playwright e2e
