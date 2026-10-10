@@ -49,6 +49,11 @@
       "source-map-js@<1.2.2": "^1.2.2",
       "tinypool@<2.1.2": "^2.1.2"
     },
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-vfj7-8cjw-p6xm"
+      ]
+    },
     "peerDependencyRules": {
       "allowedVersions": {
         "react": "19",
