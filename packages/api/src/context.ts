@@ -1,9 +1,9 @@
-import type { Database } from '@sniffoutpro/db';
+import type { Queryable } from '@sniffoutpro/db';
 import type { Tier } from '@sniffoutpro/types';
 import type { Logger } from './logger.js';
 
 export type ApiContext = {
-  db: Database;
+  db: Queryable;
   logger: Logger;
   userId: string | null;
   tier: Tier;

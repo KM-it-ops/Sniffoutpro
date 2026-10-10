@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import type { Database } from '@sniffoutpro/db';
+import type { Queryable } from '@sniffoutpro/db';
 import {
   clientProfiles,
   findings,
@@ -18,7 +18,7 @@ export function rowsInOrg<T extends { orgId: string }>(rows: readonly T[], orgId
   return rows.filter((row) => row.orgId === orgId);
 }
 
-async function callerReportOrg(db: Database, userId: string): Promise<{ orgId: string }> {
+async function callerReportOrg(db: Queryable, userId: string): Promise<{ orgId: string }> {
   const [membership] = await db
     .select({ orgId: memberships.orgId, role: memberships.role })
     .from(memberships)

@@ -3,6 +3,7 @@ import type { Database } from '@sniffoutpro/db';
 import { createCallerFactory } from '../trpc.js';
 import { appRouter } from '../router.js';
 import { createLogger } from '../logger.js';
+import { memberDb } from '../test-support/member-db.js';
 
 const createCaller = createCallerFactory(appRouter);
 const logger = createLogger('auth-test');
@@ -20,7 +21,7 @@ function callerWithEmail(email: string | null) {
   } as unknown as Database;
 
   return createCaller({
-    db,
+    db: memberDb(db),
     logger,
     userId: USER_ID,
     tier: 'WORKSTATION',

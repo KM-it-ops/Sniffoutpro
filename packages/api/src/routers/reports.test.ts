@@ -6,6 +6,7 @@ import { publicReportLogoUrl } from '../reports/store-report-logo.js';
 import { createLogger } from '../logger.js';
 import { appRouter } from '../router.js';
 import { createCallerFactory } from '../trpc.js';
+import { memberDb } from '../test-support/member-db.js';
 
 const createCaller = createCallerFactory(appRouter);
 const logger = createLogger('reports-test');
@@ -50,7 +51,7 @@ function reportDb(input: {
 
 function caller(db: Database, tier: Tier) {
   return createCaller({
-    db,
+    db: memberDb(db),
     logger,
     userId: USER,
     tier,

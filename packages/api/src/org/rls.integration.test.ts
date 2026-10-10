@@ -1,16 +1,40 @@
-import { sql } from 'drizzle-orm';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { beforeAll, describe, expect, it } from 'vitest';
-import { createDb } from '@sniffoutpro/db';
+// Needs local Postgres (docker compose -f docker/docker-compose.dev.yml up -d) with migrations applied.
+import { eq, inArray, sql } from 'drizzle-orm';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createDb, withMemberRole } from '@sniffoutpro/db';
+import {
+  authorizationScopes,
+  memberships,
+  networks,
+  organizations,
+  scanRuns,
+  users,
+} from '@sniffoutpro/db/schema';
+import { createLogger } from '../logger.js';
+import { appRouter } from '../router.js';
+import { createCallerFactory } from '../trpc.js';
 
 const DATABASE_URL =
   process.env['DATABASE_URL'] ?? 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
 
-describe('sniffout_member row security', () => {
+const USER_A = 'a0000001-0000-4000-8000-000000000001';
+const USER_B = 'b0000001-0000-4000-8000-000000000001';
+const ORG_A = 'a0000002-0000-4000-8000-000000000002';
+const ORG_B = 'b0000002-0000-4000-8000-000000000002';
+const SCOPE_A = 'a0000003-0000-4000-8000-000000000003';
+const SCOPE_B = 'b0000003-0000-4000-8000-000000000003';
+const SCAN_A = 'a0000004-0000-4000-8000-000000000004';
+const SCAN_B = 'b0000004-0000-4000-8000-000000000004';
+
+describe('sniffout_member row security on the API connection', () => {
   const db = createDb(DATABASE_URL);
+  const createCaller = createCallerFactory(appRouter);
+  const logger = createLogger('rls-integration-test');
   let ready = false;
+
+  function as(userId: string) {
+    return createCaller({ db, logger, userId, tier: 'WORKSTATION', syncAuthorized: true });
+  }
 
   beforeAll(async () => {
     try {
@@ -18,78 +42,95 @@ describe('sniffout_member row security', () => {
       ready = true;
     } catch {
       ready = false;
+      return;
     }
+    // Seeded on the owner connection, which row security does not apply to.
+    await db.insert(users).values([
+      { id: USER_A, email: 'rls-a@example.test' },
+      { id: USER_B, email: 'rls-b@example.test' },
+    ]);
+    await db.insert(organizations).values([
+      { id: ORG_A, name: 'RLS Org A', slug: 'rls-org-a' },
+      { id: ORG_B, name: 'RLS Org B', slug: 'rls-org-b' },
+    ]);
+    await db.insert(memberships).values([
+      { orgId: ORG_A, userId: USER_A, role: 'admin' },
+      { orgId: ORG_B, userId: USER_B, role: 'admin' },
+    ]);
+    await db.insert(authorizationScopes).values([
+      { id: SCOPE_A, userId: USER_A, targets: ['127.0.0.1'], consentText: 'lab A', consentedAt: new Date() },
+      { id: SCOPE_B, userId: USER_B, targets: ['10.0.0.1'], consentText: 'lab B', consentedAt: new Date() },
+    ]);
+    await db.insert(scanRuns).values([
+      {
+        id: SCAN_A,
+        orgId: ORG_A,
+        authorizationScopeId: SCOPE_A,
+        status: 'completed',
+        targets: ['127.0.0.1'],
+        intensity: 'light',
+      },
+      {
+        id: SCAN_B,
+        orgId: ORG_B,
+        authorizationScopeId: SCOPE_B,
+        status: 'completed',
+        targets: ['10.0.0.1'],
+        intensity: 'light',
+      },
+    ]);
   });
 
-  it('cannot read another organization when the session is the restricted role', async (ctx) => {
+  afterAll(async () => {
+    if (ready) {
+      await db.delete(networks).where(inArray(networks.orgId, [ORG_A, ORG_B]));
+      await db.delete(scanRuns).where(inArray(scanRuns.id, [SCAN_A, SCAN_B]));
+      await db.delete(authorizationScopes).where(inArray(authorizationScopes.id, [SCOPE_A, SCOPE_B]));
+      await db.delete(memberships).where(inArray(memberships.orgId, [ORG_A, ORG_B]));
+      await db.delete(organizations).where(inArray(organizations.id, [ORG_A, ORG_B]));
+      await db.delete(users).where(inArray(users.id, [USER_A, USER_B]));
+    }
+    await db.close();
+  });
+
+  it('returns no row for a guessed org B scan id when acting for org A', async (ctx) => {
     if (!ready) {
       ctx.skip();
     }
-    const migration = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), '../../../db/drizzle/0004_org_rls.sql'),
-      'utf8',
+    // The owner connection sees both, so an empty answer below is row security, not missing data.
+    const both = await db.select({ id: scanRuns.id }).from(scanRuns).where(inArray(scanRuns.id, [SCAN_A, SCAN_B]));
+    expect(both.map((row) => row.id).sort()).toEqual([SCAN_A, SCAN_B]);
+
+    const direct = await withMemberRole(db, USER_A, (tx) =>
+      tx.select({ id: scanRuns.id }).from(scanRuns).where(eq(scanRuns.id, SCAN_B)),
     );
-    for (const statement of migration.split('--> statement-breakpoint')) {
-      const text = statement.trim();
-      if (text.length > 0) {
-        await db.execute(sql.raw(text));
-      }
+    expect(direct).toEqual([]);
+
+    await expect(as(USER_A).scans.getDetail({ id: SCAN_B })).resolves.toBeNull();
+    const listed = await as(USER_A).scans.list();
+    expect(listed.map((row) => row.id)).toContain(SCAN_A);
+    expect(listed.map((row) => row.id)).not.toContain(SCAN_B);
+  });
+
+  it('refuses a write into an organization the person does not belong to', async (ctx) => {
+    if (!ready) {
+      ctx.skip();
     }
+    await expect(
+      withMemberRole(db, USER_A, (tx) =>
+        tx.insert(networks).values({ orgId: ORG_B, name: 'planted', cidr: '10.9.0.0/24' }),
+      ),
+    ).rejects.toThrow();
+    const planted = await db.select({ id: networks.id }).from(networks).where(eq(networks.orgId, ORG_B));
+    expect(planted).toEqual([]);
+  });
 
-    const orgA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-    const orgB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-    const scopeId = '11111111-1111-4111-8111-111111111111';
-    const scanA = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
-    const scanB = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
-    await db.execute(sql`
-      insert into organizations (id, name, slug)
-      values (${orgA}::uuid, 'Org A', 'org-a-rls'), (${orgB}::uuid, 'Org B', 'org-b-rls')
-      on conflict (id) do nothing
-    `);
-    await db.execute(sql`
-      insert into authorization_scopes (id, targets, consent_text, consented_at)
-      values (${scopeId}::uuid, '["127.0.0.1"]'::jsonb, 'lab consent', now())
-      on conflict (id) do nothing
-    `);
-    await db.execute(sql`
-      insert into scan_runs (id, org_id, authorization_scope_id, status, targets, intensity)
-      values
-        (${scanA}::uuid, ${orgA}::uuid, ${scopeId}::uuid, 'completed', '["127.0.0.1"]'::jsonb, 'light'),
-        (${scanB}::uuid, ${orgB}::uuid, ${scopeId}::uuid, 'completed', '["10.0.0.1"]'::jsonb, 'light')
-      on conflict (id) do nothing
-    `);
-
-    const owned = await db.execute(sql`
-      select id::text as id, org_id::text as org_id from scan_runs
-      where id in (${scanA}::uuid, ${scanB}::uuid)
-    `);
-    const ownedIds = scanIds(owned);
-    expect(ownedIds).toContain(scanA);
-    expect(ownedIds).toContain(scanB);
-
-    const visible = await db.transaction(async (tx) => {
-      await tx.execute(sql`set local role sniffout_member`);
-      await tx.execute(sql`select set_config('sniffout.org_id', ${orgA}, true)`);
-      return tx.execute(sql`
-        select id::text as id, org_id::text as org_id from scan_runs
-        where id in (${scanA}::uuid, ${scanB}::uuid)
-      `);
-    });
-    const visibleIds = scanIds(visible);
-    expect(visibleIds).toContain(scanA);
-    expect(visibleIds).not.toContain(scanB);
+  it('runs the role switch only for the request, not the shared connection', async (ctx) => {
+    if (!ready) {
+      ctx.skip();
+    }
+    await withMemberRole(db, USER_A, async (tx) => tx.execute(sql`select 1`));
+    const after = await db.execute<{ role: string }>(sql`select current_user as role`);
+    expect(after[0]?.role).not.toBe('sniffout_member');
   });
 });
-
-function scanIds(result: unknown): string[] {
-  if (!Array.isArray(result)) {
-    throw new Error('Expected scan rows');
-  }
-  return result.map((row) => {
-    const id = (row as { id?: unknown }).id;
-    if (typeof id !== 'string') {
-      throw new Error('Expected a scan id');
-    }
-    return id;
-  });
-}

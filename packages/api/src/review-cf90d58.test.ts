@@ -7,6 +7,7 @@ import { createDb, type Database } from '@sniffoutpro/db';
 import { createLogger } from './logger.js';
 import { appRouter } from './router.js';
 import { createCallerFactory } from './trpc.js';
+import { memberDb } from './test-support/member-db.js';
 
 const createCaller = createCallerFactory(appRouter);
 const logger = createLogger('review-test');
@@ -29,11 +30,17 @@ describe('lead 1: the API never runs queries as the restricted role', () => {
   it('sends a role switch or an org setting before reading scans', async () => {
     const db = createDb('postgresql://nobody:none@127.0.0.1:1/none');
     const seen: string[] = [];
-    const client = (db as unknown as { $client: { unsafe: (q: string) => unknown } }).$client;
+    const client = (
+      db as unknown as {
+        $client: { unsafe: (q: string) => unknown; begin: (fn: (c: unknown) => unknown) => unknown };
+      }
+    ).$client;
     vi.spyOn(client, 'unsafe').mockImplementation((query: string) => {
       seen.push(query);
       return Object.assign(Promise.resolve([]), { values: () => Promise.resolve([]) });
     });
+    // Queries inside a transaction go through begin(), not the top-level unsafe(); record them too.
+    vi.spyOn(client, 'begin').mockImplementation((fn: (c: unknown) => unknown) => fn(client));
     const caller = createCaller({
       db,
       logger,
@@ -93,7 +100,7 @@ describe('extra: a viewer cannot sync (requirement R6, plan U8)', () => {
       transaction: (fn: (t: typeof tx) => Promise<void>) => fn(tx),
     } as unknown as Database;
     const caller = createCaller({
-      db,
+      db: memberDb(db),
       logger,
       userId: USER,
       tier: 'WORKSTATION',

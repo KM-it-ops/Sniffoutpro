@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { z } from 'zod';
-import type { Database } from '@sniffoutpro/db';
+import type { Queryable } from '@sniffoutpro/db';
 import {
   authorizationScopes,
   cveCache,
@@ -74,7 +74,7 @@ export function provenanceFromNormalizedOutput(value: unknown): ScanProvenance |
   return parsed.success ? parsed.data.source : undefined;
 }
 
-async function loadScanDetail(db: Database, id: string): Promise<{ scan: ScanRun } | null> {
+async function loadScanDetail(db: Queryable, id: string): Promise<{ scan: ScanRun } | null> {
   const [run] = await db.select().from(scanRuns).where(eq(scanRuns.id, id)).limit(1);
   if (run === undefined) {
     return null;
