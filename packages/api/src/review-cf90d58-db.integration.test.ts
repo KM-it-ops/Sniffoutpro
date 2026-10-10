@@ -67,9 +67,10 @@ describe('invited-without-consent: a victim upload lands in the inviter org', ()
       },
     });
 
-    // The admin must NOT be able to see it.
-    await expect(as(ATTACKER).scans.getDetail({ id: SCAN })).rejects.toMatchObject({
-      code: 'FORBIDDEN',
-    });
+    // The scan was stored, and is personal to the victim.
+    const [stored] = await db.select({ orgId: scanRuns.orgId }).from(scanRuns).where(eq(scanRuns.id, SCAN));
+    expect(stored).toEqual({ orgId: null });
+    // The admin must NOT be able to see it. Row security hides it entirely, so it reads as missing.
+    await expect(as(ATTACKER).scans.getDetail({ id: SCAN })).resolves.toBeNull();
   });
 });

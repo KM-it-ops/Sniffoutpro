@@ -1,11 +1,11 @@
 import { TRPCError } from '@trpc/server';
 import { and, eq } from 'drizzle-orm';
-import type { Database } from '@sniffoutpro/db';
+import type { Queryable } from '@sniffoutpro/db';
 import { authorizationScopes, memberships, scanRuns } from '@sniffoutpro/db/schema';
 import { scansVisibleTo } from './access.js';
 
 export async function assertScanInCallerOrg(
-  db: Database,
+  db: Queryable,
   userId: string,
   scanId: string,
 ): Promise<'missing' | 'ok'> {

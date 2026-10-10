@@ -5,6 +5,7 @@ import { createLogger } from '../logger.js';
 import { appRouter } from '../router.js';
 import { createCallerFactory } from '../trpc.js';
 import { jobsForUser } from './scan-jobs.js';
+import { memberDb } from '../test-support/member-db.js';
 
 const createCaller = createCallerFactory(appRouter);
 const logger = createLogger('scan-jobs-test');
@@ -65,7 +66,7 @@ function jobsDatabase(seed: JobRow[], role = 'analyst') {
 
 function caller(db: Database, tier: Tier, userId: string) {
   return createCaller({
-    db,
+    db: memberDb(db),
     logger,
     userId,
     tier,

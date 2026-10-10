@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { memberships, organizations, users } from '@sniffoutpro/db/schema';
+import { memberships, organizations } from '@sniffoutpro/db/schema';
 import { canInvite, parseOrgRole, removesOnlyAdmin } from '../org/access.js';
 import { protectedProcedure, router } from '../trpc.js';
 
@@ -33,18 +33,32 @@ export const organizationsRouter = router({
       if (taken !== undefined) {
         throw new TRPCError({ code: 'CONFLICT', message: 'That short name is already used.' });
       }
-      const [org] = await ctx.db.insert(organizations).values({ name, slug }).returning();
+      // The id is chosen here: row security shows an organization only once its creator is a member, so no RETURNING.
+      const id = crypto.randomUUID();
+      await ctx.db
+        .insert(organizations)
+        .values({ id, name, slug })
+        .catch((err: unknown) => {
+          // The short name may belong to an organization this caller cannot see.
+          for (let cur: unknown = err; cur instanceof Error; cur = cur.cause) {
+            if ((cur as Error & { code?: unknown }).code === '23505') {
+              throw new TRPCError({ code: 'CONFLICT', message: 'That short name is already used.' });
+            }
+          }
+          throw err;
+        });
+      await ctx.db.insert(memberships).values({
+        orgId: id,
+        userId,
+        role: 'admin',
+      });
+      const [org] = await ctx.db.select().from(organizations).where(eq(organizations.id, id)).limit(1);
       if (org === undefined) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Organization was not created',
         });
       }
-      await ctx.db.insert(memberships).values({
-        orgId: org.id,
-        userId,
-        role: 'admin',
-      });
       return org;
     }),
 
@@ -73,11 +87,12 @@ export const organizationsRouter = router({
       if (role === null || !canInvite(role)) {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Only an admin can invite' });
       }
-      const [invitee] = await ctx.db
-        .select({ id: users.id })
-        .from(users)
-        .where(eq(users.email, input.email))
-        .limit(1);
+      // Row security hides other accounts; this database function answers only an admin of input.orgId.
+      const found = await ctx.db.execute<{ id: string | null }>(
+        sql`select sniffout_invitee_id(${input.orgId}::uuid, ${input.email}) as id`,
+      );
+      const inviteeId = found[0]?.id ?? null;
+      const invitee = inviteeId === null ? undefined : { id: inviteeId };
       if (invitee === undefined) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'No account with that email' });
       }

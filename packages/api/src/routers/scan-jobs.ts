@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import type { Database } from '@sniffoutpro/db';
+import type { Queryable } from '@sniffoutpro/db';
 import { memberships, scanJobs } from '@sniffoutpro/db/schema';
 import { canSchedule, parseOrgRole } from '../org/access.js';
 import { requireTierFeature, router } from '../trpc.js';
@@ -22,7 +22,7 @@ function requireUserId(userId: string | null): string {
   return userId;
 }
 
-async function callerScheduleOrg(db: Database, userId: string): Promise<{ orgId: string }> {
+async function callerScheduleOrg(db: Queryable, userId: string): Promise<{ orgId: string }> {
   const [membership] = await db
     .select({ orgId: memberships.orgId, role: memberships.role })
     .from(memberships)

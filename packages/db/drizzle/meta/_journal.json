@@ -57,6 +57,13 @@
       "when": 1783656100000,
       "tag": "0007_user_email_nullable",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783656200000,
+      "tag": "0008_member_rls_all_tables",
+      "breakpoints": true
     }
   ]
 }

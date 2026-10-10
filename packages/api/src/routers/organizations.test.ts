@@ -3,6 +3,7 @@ import type { Database } from '@sniffoutpro/db';
 import { createLogger } from '../logger.js';
 import { appRouter } from '../router.js';
 import { createCallerFactory } from '../trpc.js';
+import { memberDb } from '../test-support/member-db.js';
 
 const createCaller = createCallerFactory(appRouter);
 const logger = createLogger('organizations-test');
@@ -15,6 +16,8 @@ function inviteDb(callerRole: string, existingMember = false) {
   let updatedRole: string | undefined;
   let call = 0;
   const db = {
+    // The invitee lookup (sniffout_invitee_id).
+    execute: () => Promise.resolve([{ id: INVITEE }]),
     select: () => ({
       from: () => ({
         where: () => ({
@@ -22,9 +25,6 @@ function inviteDb(callerRole: string, existingMember = false) {
             call += 1;
             if (call === 1) {
               return Promise.resolve([{ role: callerRole }]);
-            }
-            if (call === 2) {
-              return Promise.resolve([{ id: INVITEE }]);
             }
             return Promise.resolve(existingMember ? [{ id: 'membership-1' }] : []);
           },
@@ -55,7 +55,7 @@ function inviteDb(callerRole: string, existingMember = false) {
 
 function caller(db: Database, userId: string) {
   return createCaller({
-    db,
+    db: memberDb(db),
     logger,
     userId,
     tier: 'ADMIN',
@@ -126,6 +126,8 @@ describe('organization invite', () => {
     let updated = false;
     let call = 0;
     const db = {
+      // The invitee lookup (sniffout_invitee_id).
+      execute: () => Promise.resolve([{ id: ADMIN }]),
       select: () => ({
         from: () => ({
           where: () => ({
@@ -135,9 +137,6 @@ describe('organization invite', () => {
                 return Promise.resolve([{ role: 'admin' }]);
               }
               if (call === 2) {
-                return Promise.resolve([{ id: ADMIN }]);
-              }
-              if (call === 3) {
                 return Promise.resolve([{ id: 'membership-1', role: 'admin' }]);
               }
               return Promise.resolve([{ userId: ADMIN }]);

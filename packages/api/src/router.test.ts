@@ -123,8 +123,7 @@ describe('tRPC api', () => {
     });
     const hidden = await other.scans.list();
     expect(hidden.some((row) => row.id === scanId)).toBe(false);
-    await expect(other.scans.getDetail({ id: scanId })).rejects.toMatchObject({
-      code: 'FORBIDDEN',
-    });
+    // Row security hides another account's scan entirely, so it reads as missing.
+    await expect(other.scans.getDetail({ id: scanId })).resolves.toBeNull();
   });
 });
