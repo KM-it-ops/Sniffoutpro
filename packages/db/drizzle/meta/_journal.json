@@ -64,6 +64,13 @@
       "when": 1783656200000,
       "tag": "0008_member_rls_all_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783656300000,
+      "tag": "0009_membership_guard",
+      "breakpoints": true
     }
   ]
 }
