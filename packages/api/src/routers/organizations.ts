@@ -37,12 +37,15 @@ export const organizationsRouter = router({
       const id = crypto.randomUUID();
       await ctx.db
         .insert(organizations)
-        .values({ id, name, slug })
+        .values({ id, name, slug, createdBy: userId })
         .catch((err: unknown) => {
           // The short name may belong to an organization this caller cannot see.
           for (let cur: unknown = err; cur instanceof Error; cur = cur.cause) {
             if ((cur as Error & { code?: unknown }).code === '23505') {
-              throw new TRPCError({ code: 'CONFLICT', message: 'That short name is already used.' });
+              throw new TRPCError({
+                code: 'CONFLICT',
+                message: 'That short name is already used.',
+              });
             }
           }
           throw err;
@@ -52,7 +55,11 @@ export const organizationsRouter = router({
         userId,
         role: 'admin',
       });
-      const [org] = await ctx.db.select().from(organizations).where(eq(organizations.id, id)).limit(1);
+      const [org] = await ctx.db
+        .select()
+        .from(organizations)
+        .where(eq(organizations.id, id))
+        .limit(1);
       if (org === undefined) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
@@ -92,10 +99,11 @@ export const organizationsRouter = router({
         sql`select sniffout_invitee_id(${input.orgId}::uuid, ${input.email}) as id`,
       );
       const inviteeId = found[0]?.id ?? null;
-      const invitee = inviteeId === null ? undefined : { id: inviteeId };
-      if (invitee === undefined) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'No account with that email' });
+      // An unknown email gets the same answer as a new invite, so inviting cannot be used to test who has an account.
+      if (inviteeId === null) {
+        return { orgId: input.orgId, role: input.role, updated: false as const };
       }
+      const invitee = { id: inviteeId };
       const [existing] = await ctx.db
         .select({ id: memberships.id, role: memberships.role })
         .from(memberships)
@@ -132,7 +140,7 @@ export const organizationsRouter = router({
           .update(memberships)
           .set({ role: input.role })
           .where(eq(memberships.id, existing.id));
-        return { orgId: input.orgId, userId: invitee.id, role: input.role, updated: true as const };
+        return { orgId: input.orgId, role: input.role, updated: true as const };
       }
       await ctx.db.insert(memberships).values({
         orgId: input.orgId,
@@ -141,7 +149,7 @@ export const organizationsRouter = router({
         // Grants nothing until the invited person accepts it.
         status: 'pending',
       });
-      return { orgId: input.orgId, userId: invitee.id, role: input.role, updated: false as const };
+      return { orgId: input.orgId, role: input.role, updated: false as const };
     }),
 
   setRole: protectedProcedure

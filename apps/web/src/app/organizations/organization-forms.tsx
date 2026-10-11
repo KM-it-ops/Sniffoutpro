@@ -55,7 +55,7 @@ export function OrganizationForms() {
       setInvited(
         result.updated
           ? `${email} is now ${result.role}.`
-          : `${result.role} invite sent to ${email}.`,
+          : `If ${email} has an account, they will see the ${result.role} invite when they sign in.`,
       );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The invite could not be sent.');
