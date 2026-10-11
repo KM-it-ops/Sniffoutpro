@@ -5,6 +5,7 @@ import { createLogger } from '../logger.js';
 import { appRouter } from '../router.js';
 import { createCallerFactory } from '../trpc.js';
 import { rowsInOrg } from './reports.js';
+import { memberDb } from '../test-support/member-db.js';
 
 const createCaller = createCallerFactory(appRouter);
 const logger = createLogger('reports-clients-test');
@@ -15,7 +16,7 @@ const CLIENT = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 
 function caller(db: Database, tier: Tier) {
   return createCaller({
-    db,
+    db: memberDb(db),
     logger,
     userId: USER,
     tier,

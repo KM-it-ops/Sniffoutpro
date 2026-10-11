@@ -7,6 +7,8 @@ const USER = '11111111-1111-4111-8111-111111111111';
 function recordingDb(): { db: Database; rows: { id: string; email: string }[] } {
   const rows: { id: string; email: string }[] = [];
   const db = {
+    update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
+    transaction: (fn: (tx: unknown) => Promise<void>) => fn(db),
     insert: () => ({
       values: (row: { id: string; email: string }) => ({
         onConflictDoNothing: () => {

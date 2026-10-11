@@ -1,6 +1,7 @@
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { TRPCError } from '@trpc/server';
+import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { z } from 'zod';
-import type { Database } from '@sniffoutpro/db';
+import type { Queryable } from '@sniffoutpro/db';
 import {
   authorizationScopes,
   cveCache,
@@ -10,7 +11,7 @@ import {
   scanRuns,
   services,
 } from '@sniffoutpro/db/schema';
-import { scansVisibleTo, uploadOrgId } from '../org/access.js';
+import { canSync, parseOrgRole } from '../org/access.js';
 import { assertScanInCallerOrg } from '../org/scan-guard.js';
 import { diffScanRuns } from '@sniffoutpro/scan-engine';
 import {
@@ -22,13 +23,25 @@ import {
   type ScanRun,
 } from '@sniffoutpro/types';
 import { assertRateLimit } from '../rate-limit.js';
-import { router, protectedProcedure } from '../trpc.js';
+import { router, protectedProcedure, syncProcedure } from '../trpc.js';
 
 const SyncScanInputSchema = z.object({
   consentText: z.string().min(1),
   scanRun: ScanRunSchema,
   rawOutput: z.string().optional(),
+  // Upload into this organization; without it the scan stays personal.
+  orgId: z.string().uuid().optional(),
 });
+
+/** A scan or finding id that is already taken: say so plainly instead of passing on the database error. */
+function rethrowDuplicateScan(err: unknown): never {
+  for (let cur: unknown = err; cur instanceof Error; cur = cur.cause) {
+    if ((cur as Error & { code?: unknown }).code === '23505') {
+      throw new TRPCError({ code: 'CONFLICT', message: 'That scan was already uploaded.' });
+    }
+  }
+  throw err;
+}
 
 /**
  * C3 (docs/AUDIT-RESIDUAL-2026-07-09.md): persist fixture provenance through
@@ -61,7 +74,7 @@ export function provenanceFromNormalizedOutput(value: unknown): ScanProvenance |
   return parsed.success ? parsed.data.source : undefined;
 }
 
-async function loadScanDetail(db: Database, id: string): Promise<{ scan: ScanRun } | null> {
+async function loadScanDetail(db: Queryable, id: string): Promise<{ scan: ScanRun } | null> {
   const [run] = await db.select().from(scanRuns).where(eq(scanRuns.id, id)).limit(1);
   if (run === undefined) {
     return null;
@@ -153,7 +166,7 @@ export const scansRouter = router({
       const memberRows = await ctx.db
         .select({ orgId: memberships.orgId })
         .from(memberships)
-        .where(eq(memberships.userId, ctx.userId));
+        .where(and(eq(memberships.userId, ctx.userId), eq(memberships.status, 'active')));
       const orgIds = memberRows.map((row) => row.orgId);
       if (orgIds.length === 0) {
         return ctx.db
@@ -183,10 +196,17 @@ export const scansRouter = router({
           completedAt: scanRuns.completedAt,
         })
         .from(scanRuns)
-        .where(inArray(scanRuns.orgId, orgIds))
+        .innerJoin(authorizationScopes, eq(scanRuns.authorizationScopeId, authorizationScopes.id))
+        // The caller's organizations' scans, plus their own personal uploads.
+        .where(
+          or(
+            inArray(scanRuns.orgId, orgIds),
+            and(isNull(scanRuns.orgId), eq(authorizationScopes.userId, ctx.userId)),
+          ),
+        )
         .orderBy(desc(scanRuns.startedAt))
         .limit(limit);
-      return scansVisibleTo(rows, orgIds);
+      return rows;
     }),
 
   getDetail: protectedProcedure
@@ -207,107 +227,127 @@ export const scansRouter = router({
       return loadScanDetail(ctx.db, input.id);
     }),
 
-  sync: protectedProcedure.input(SyncScanInputSchema).mutation(async ({ ctx, input }) => {
+  sync: syncProcedure.input(SyncScanInputSchema).mutation(async ({ ctx, input }) => {
     const { scanRun, consentText, rawOutput } = input;
     ctx.logger.info({ scanId: scanRun.id, targets: scanRun.targets }, 'scans.sync');
     const memberRows =
       ctx.userId === null
         ? []
         : await ctx.db
-            .select({ orgId: memberships.orgId })
+            .select({ orgId: memberships.orgId, role: memberships.role })
             .from(memberships)
-            .where(eq(memberships.userId, ctx.userId));
-    const orgId = uploadOrgId(memberRows.map((row) => row.orgId));
+            .where(and(eq(memberships.userId, ctx.userId), eq(memberships.status, 'active')));
+    // Someone whose every organization role is viewer may not upload at all, not even personally.
+    const roles = memberRows.map((row) => parseOrgRole(row.role));
+    if (roles.length > 0 && !roles.some((role) => role !== null && canSync(role))) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Viewers cannot upload scans' });
+    }
+    let orgId: string | null = null;
+    if (input.orgId !== undefined) {
+      const target = memberRows.find((row) => row.orgId === input.orgId);
+      const role = parseOrgRole(target?.role);
+      if (role === null || !canSync(role)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Your role cannot upload scans to that organization',
+        });
+      }
+      orgId = input.orgId;
+    }
 
-    await ctx.db.transaction(async (tx) => {
-      const scopeId = crypto.randomUUID();
-      await tx.insert(authorizationScopes).values({
-        id: scopeId,
-        userId: ctx.userId,
-        targets: scanRun.targets,
-        consentText,
-        consentedAt: new Date(scanRun.startedAt),
-      });
-
-      await tx.insert(scanRuns).values({
-        id: scanRun.id,
-        orgId,
-        authorizationScopeId: scopeId,
-        status: scanRun.status,
-        targets: scanRun.targets,
-        intensity: scanRun.intensity,
-        startedAt: new Date(scanRun.startedAt),
-        completedAt: scanRun.completedAt !== undefined ? new Date(scanRun.completedAt) : null,
-        rawOutput: rawOutput ?? null,
-        normalizedOutput: toNormalizedOutput(scanRun),
-      });
-
-      const hostIdByIp = new Map<string, string>();
-      const serviceIdByKey = new Map<string, string>();
-
-      for (const host of scanRun.hosts) {
-        const hostId = crypto.randomUUID();
-        hostIdByIp.set(host.ip, hostId);
-        await tx.insert(hosts).values({
-          id: hostId,
-          scanRunId: scanRun.id,
-          orgId,
-          ip: host.ip,
-          hostname: host.hostname ?? null,
-          mac: host.mac ?? null,
-          os: host.os ?? null,
-          osConfidence: host.osConfidence ?? null,
+    await ctx.db
+      .transaction(async (tx) => {
+        const scopeId = crypto.randomUUID();
+        await tx.insert(authorizationScopes).values({
+          id: scopeId,
+          userId: ctx.userId,
+          targets: scanRun.targets,
+          consentText,
+          consentedAt: new Date(scanRun.startedAt),
         });
 
-        for (const svc of host.services) {
-          const serviceId = crypto.randomUUID();
-          serviceIdByKey.set(`${host.ip}:${String(svc.port)}:${svc.protocol}`, serviceId);
-          await tx.insert(services).values({
-            id: serviceId,
-            hostId,
+        await tx.insert(scanRuns).values({
+          id: scanRun.id,
+          orgId,
+          authorizationScopeId: scopeId,
+          status: scanRun.status,
+          targets: scanRun.targets,
+          intensity: scanRun.intensity,
+          startedAt: new Date(scanRun.startedAt),
+          completedAt: scanRun.completedAt !== undefined ? new Date(scanRun.completedAt) : null,
+          rawOutput: rawOutput ?? null,
+          normalizedOutput: toNormalizedOutput(scanRun),
+        });
+
+        const hostIdByIp = new Map<string, string>();
+        const serviceIdByKey = new Map<string, string>();
+
+        for (const host of scanRun.hosts) {
+          const hostId = crypto.randomUUID();
+          hostIdByIp.set(host.ip, hostId);
+          await tx.insert(hosts).values({
+            id: hostId,
+            scanRunId: scanRun.id,
             orgId,
-            port: svc.port,
-            protocol: svc.protocol,
-            product: svc.product ?? null,
-            version: svc.version ?? null,
-            banner: svc.banner ?? null,
+            ip: host.ip,
+            hostname: host.hostname ?? null,
+            mac: host.mac ?? null,
+            os: host.os ?? null,
+            osConfidence: host.osConfidence ?? null,
+          });
+
+          for (const svc of host.services) {
+            const serviceId = crypto.randomUUID();
+            serviceIdByKey.set(`${host.ip}:${String(svc.port)}:${svc.protocol}`, serviceId);
+            await tx.insert(services).values({
+              id: serviceId,
+              hostId,
+              orgId,
+              port: svc.port,
+              protocol: svc.protocol,
+              product: svc.product ?? null,
+              version: svc.version ?? null,
+              banner: svc.banner ?? null,
+            });
+          }
+        }
+
+        for (const finding of scanRun.findings) {
+          if (finding.cveId !== undefined) {
+            await tx
+              .insert(cveCache)
+              .values({
+                id: finding.cveId,
+                description: finding.description ?? null,
+                cvssScore: finding.cvssScore ?? null,
+                lastSyncedAt: new Date(),
+              })
+              .onConflictDoNothing();
+          }
+        }
+
+        for (const finding of scanRun.findings) {
+          const serviceKey =
+            finding.port !== undefined
+              ? `${finding.hostIp}:${String(finding.port)}:tcp`
+              : undefined;
+          await tx.insert(findings).values({
+            id: finding.id,
+            scanRunId: scanRun.id,
+            orgId,
+            hostId: hostIdByIp.get(finding.hostIp) ?? null,
+            serviceId: serviceKey !== undefined ? (serviceIdByKey.get(serviceKey) ?? null) : null,
+            cveId: finding.cveId ?? null,
+            title: finding.title,
+            severity: finding.severity,
+            cvssScore: finding.cvssScore ?? null,
+            riskScore: finding.riskScore,
+            description: finding.description ?? null,
+            port: finding.port ?? null,
           });
         }
-      }
-
-      for (const finding of scanRun.findings) {
-        if (finding.cveId !== undefined) {
-          await tx
-            .insert(cveCache)
-            .values({
-              id: finding.cveId,
-              description: finding.description ?? null,
-              cvssScore: finding.cvssScore ?? null,
-              lastSyncedAt: new Date(),
-            })
-            .onConflictDoNothing();
-        }
-      }
-
-      for (const finding of scanRun.findings) {
-        const serviceKey =
-          finding.port !== undefined ? `${finding.hostIp}:${String(finding.port)}:tcp` : undefined;
-        await tx.insert(findings).values({
-          id: finding.id,
-          scanRunId: scanRun.id,
-          orgId,
-          hostId: hostIdByIp.get(finding.hostIp) ?? null,
-          serviceId: serviceKey !== undefined ? (serviceIdByKey.get(serviceKey) ?? null) : null,
-          cveId: finding.cveId ?? null,
-          title: finding.title,
-          severity: finding.severity,
-          cvssScore: finding.cvssScore ?? null,
-          riskScore: finding.riskScore,
-          description: finding.description ?? null,
-          port: finding.port ?? null,
-        });
-      }
-    });
+      })
+      .catch(rethrowDuplicateScan);
 
     return { ok: true as const, scanId: scanRun.id };
   }),

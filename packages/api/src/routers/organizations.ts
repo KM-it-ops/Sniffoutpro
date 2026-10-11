@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { memberships, organizations, users } from '@sniffoutpro/db/schema';
+import { memberships, organizations } from '@sniffoutpro/db/schema';
 import { canInvite, parseOrgRole, removesOnlyAdmin } from '../org/access.js';
 import { protectedProcedure, router } from '../trpc.js';
 
@@ -33,18 +33,32 @@ export const organizationsRouter = router({
       if (taken !== undefined) {
         throw new TRPCError({ code: 'CONFLICT', message: 'That short name is already used.' });
       }
-      const [org] = await ctx.db.insert(organizations).values({ name, slug }).returning();
+      // The id is chosen here: row security shows an organization only once its creator is a member, so no RETURNING.
+      const id = crypto.randomUUID();
+      await ctx.db
+        .insert(organizations)
+        .values({ id, name, slug })
+        .catch((err: unknown) => {
+          // The short name may belong to an organization this caller cannot see.
+          for (let cur: unknown = err; cur instanceof Error; cur = cur.cause) {
+            if ((cur as Error & { code?: unknown }).code === '23505') {
+              throw new TRPCError({ code: 'CONFLICT', message: 'That short name is already used.' });
+            }
+          }
+          throw err;
+        });
+      await ctx.db.insert(memberships).values({
+        orgId: id,
+        userId,
+        role: 'admin',
+      });
+      const [org] = await ctx.db.select().from(organizations).where(eq(organizations.id, id)).limit(1);
       if (org === undefined) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Organization was not created',
         });
       }
-      await ctx.db.insert(memberships).values({
-        orgId: org.id,
-        userId,
-        role: 'admin',
-      });
       return org;
     }),
 
@@ -61,17 +75,24 @@ export const organizationsRouter = router({
       const [caller] = await ctx.db
         .select({ role: memberships.role })
         .from(memberships)
-        .where(and(eq(memberships.userId, userId), eq(memberships.orgId, input.orgId)))
+        .where(
+          and(
+            eq(memberships.userId, userId),
+            eq(memberships.orgId, input.orgId),
+            eq(memberships.status, 'active'),
+          ),
+        )
         .limit(1);
       const role = parseOrgRole(caller?.role);
       if (role === null || !canInvite(role)) {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Only an admin can invite' });
       }
-      const [invitee] = await ctx.db
-        .select({ id: users.id })
-        .from(users)
-        .where(eq(users.email, input.email))
-        .limit(1);
+      // Row security hides other accounts; this database function answers only an admin of input.orgId.
+      const found = await ctx.db.execute<{ id: string | null }>(
+        sql`select sniffout_invitee_id(${input.orgId}::uuid, ${input.email}) as id`,
+      );
+      const inviteeId = found[0]?.id ?? null;
+      const invitee = inviteeId === null ? undefined : { id: inviteeId };
       if (invitee === undefined) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'No account with that email' });
       }
@@ -85,7 +106,13 @@ export const organizationsRouter = router({
           const adminRows = await ctx.db
             .select({ userId: memberships.userId })
             .from(memberships)
-            .where(and(eq(memberships.orgId, input.orgId), eq(memberships.role, 'admin')))
+            .where(
+              and(
+                eq(memberships.orgId, input.orgId),
+                eq(memberships.role, 'admin'),
+                eq(memberships.status, 'active'),
+              ),
+            )
             .limit(2);
           if (
             removesOnlyAdmin({
@@ -111,6 +138,8 @@ export const organizationsRouter = router({
         orgId: input.orgId,
         userId: invitee.id,
         role: input.role,
+        // Grants nothing until the invited person accepts it.
+        status: 'pending',
       });
       return { orgId: input.orgId, userId: invitee.id, role: input.role, updated: false as const };
     }),
@@ -128,7 +157,13 @@ export const organizationsRouter = router({
       const [caller] = await ctx.db
         .select({ role: memberships.role })
         .from(memberships)
-        .where(and(eq(memberships.userId, callerId), eq(memberships.orgId, input.orgId)))
+        .where(
+          and(
+            eq(memberships.userId, callerId),
+            eq(memberships.orgId, input.orgId),
+            eq(memberships.status, 'active'),
+          ),
+        )
         .limit(1);
       const role = parseOrgRole(caller?.role);
       if (role === null || !canInvite(role)) {
@@ -146,7 +181,13 @@ export const organizationsRouter = router({
         const adminRows = await ctx.db
           .select({ userId: memberships.userId })
           .from(memberships)
-          .where(and(eq(memberships.orgId, input.orgId), eq(memberships.role, 'admin')))
+          .where(
+            and(
+              eq(memberships.orgId, input.orgId),
+              eq(memberships.role, 'admin'),
+              eq(memberships.status, 'active'),
+            ),
+          )
           .limit(2);
         if (
           removesOnlyAdmin({
@@ -167,5 +208,35 @@ export const organizationsRouter = router({
         .set({ role: input.role })
         .where(and(eq(memberships.orgId, input.orgId), eq(memberships.userId, input.userId)));
       return { orgId: input.orgId, userId: input.userId, role: input.role };
+    }),
+
+  myInvites: protectedProcedure.query(async ({ ctx }) => {
+    const userId = requireUserId(ctx.userId);
+    return ctx.db
+      .select({ orgId: memberships.orgId, orgName: organizations.name, role: memberships.role })
+      .from(memberships)
+      .innerJoin(organizations, eq(memberships.orgId, organizations.id))
+      .where(and(eq(memberships.userId, userId), eq(memberships.status, 'pending')));
+  }),
+
+  acceptInvite: protectedProcedure
+    .input(z.object({ orgId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const userId = requireUserId(ctx.userId);
+      const [row] = await ctx.db
+        .update(memberships)
+        .set({ status: 'active' })
+        .where(
+          and(
+            eq(memberships.userId, userId),
+            eq(memberships.orgId, input.orgId),
+            eq(memberships.status, 'pending'),
+          ),
+        )
+        .returning({ role: memberships.role });
+      if (row === undefined) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'No invite from that organization' });
+      }
+      return { orgId: input.orgId, role: row.role };
     }),
 });

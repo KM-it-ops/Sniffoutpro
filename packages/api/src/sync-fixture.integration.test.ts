@@ -93,7 +93,7 @@ describe('fixture scan cloud sync', () => {
       logger,
       userId,
       tier: 'WORKSTATION',
-      syncAuthorized: false,
+      syncAuthorized: true,
     });
 
     const sync = await caller.scans.sync({

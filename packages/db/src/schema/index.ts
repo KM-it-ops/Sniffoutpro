@@ -20,7 +20,8 @@ export const organizations = pgTable('organizations', {
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
-  email: text('email').notNull().unique(),
+  // Nullable: when an email moves to a new account, the old row keeps its data but loses the email.
+  email: text('email').unique(),
   displayName: text('display_name'),
   tier: text('tier', { enum: ['PERSONAL', 'WORKSTATION', 'CONSULTANT', 'ADMIN'] })
     .notNull()
@@ -39,6 +40,10 @@ export const memberships = pgTable(
       .notNull()
       .references(() => users.id),
     role: text('role', { enum: ['admin', 'analyst', 'viewer'] }).notNull(),
+    // An invite is 'pending' until the invited person accepts it; only 'active' rows grant anything.
+    status: text('status', { enum: ['pending', 'active'] })
+      .notNull()
+      .default('active'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
