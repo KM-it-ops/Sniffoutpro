@@ -106,7 +106,7 @@ describe('organization invite', () => {
       email: 'analyst@example.com',
       role: 'analyst',
     });
-    expect(result).toEqual({ orgId: ORG_A, userId: INVITEE, role: 'analyst', updated: false });
+    expect(result).toEqual({ orgId: ORG_A, role: 'analyst', updated: false });
     expect(read()).toEqual({ orgId: ORG_A, userId: INVITEE, role: 'analyst', status: 'pending' });
   });
 
