@@ -9,11 +9,15 @@
  * CREATE TABLE statements against existing tables and fails.
  *
  * What this does (idempotent):
- *   1. If the public schema has no scan_runs table (fresh DB), do nothing —
- *      let drizzle-kit create everything.
- *   2. Otherwise ensure drizzle.__drizzle_migrations exists and contains one
- *      row per journal entry whose tables/DDL are already applied, using the
- *      journal `when` as created_at and sha256(file) as hash.
+ *   1. Reads the ledger's newest row and the public schema's tables, columns,
+ *      constraints and indexes. Read-only so far.
+ *   2. Records only the pre-ledger migrations (0000, 0001) whose every table,
+ *      column, constraint and index already exists, stopping at the first one
+ *      that is not (see scripts/migrate-baseline-plan.mjs). Everything else —
+ *      including DDL applied by hand — is left for drizzle-kit, which applies
+ *      it or fails loudly. On a fresh database nothing is recorded.
+ *   3. Writes the rows in one transaction, using the journal `when` as
+ *      created_at and sha256(file) as hash, as drizzle-kit does.
  *
  * Never prints DATABASE_URL or credentials. Usage:
  *   DATABASE_URL=... node scripts/migrate-baseline.mjs
@@ -23,6 +27,8 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { planBaseline } from './migrate-baseline-plan.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -36,42 +42,71 @@ if (!url) {
 
 const drizzleDir = join(here, '../packages/db/drizzle');
 const journal = JSON.parse(readFileSync(join(drizzleDir, 'meta/_journal.json'), 'utf8'));
+const sqlByTag = new Map(
+  journal.entries.map((entry) => [
+    entry.tag,
+    readFileSync(join(drizzleDir, `${entry.tag}.sql`), 'utf8'),
+  ]),
+);
 
 const sql = postgres(url, { max: 1, prepare: false });
+const names = (rows) => new Set(rows.map((r) => r.name));
 
 try {
-  const [{ exists }] =
-    await sql`select (to_regclass('public.scan_runs') is not null) as exists`;
-  if (!exists) {
-    console.log('Fresh database detected — no baseline needed.');
-    process.exit(0);
+  const [{ ledger }] =
+    await sql`select (to_regclass('drizzle.__drizzle_migrations') is not null) as ledger`;
+  // Same row drizzle-kit compares against.
+  const [newest] = ledger
+    ? await sql`select created_at from drizzle.__drizzle_migrations order by created_at desc limit 1`
+    : [];
+  const ledgerHighWater = newest ? Number(newest.created_at) : null;
+
+  const catalog = {
+    tables: names(await sql`
+      select c.relname as name from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relkind in ('r', 'p')`),
+    columns: names(await sql`
+      select c.relname || '.' || a.attname as name from pg_attribute a
+      join pg_class c on c.oid = a.attrelid
+      join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relkind in ('r', 'p')
+        and a.attnum > 0 and not a.attisdropped`),
+    constraints: names(await sql`
+      select con.conname as name from pg_constraint con
+      join pg_namespace n on n.oid = con.connamespace
+      where n.nspname = 'public'`),
+    indexes: names(await sql`
+      select indexname as name from pg_indexes where schemaname = 'public'`),
+  };
+
+  const decisions = planBaseline({ entries: journal.entries, sqlByTag, ledgerHighWater, catalog });
+  if (ledgerHighWater !== null) {
+    console.log(`Ledger's newest row: created_at=${String(ledgerHighWater)}`);
+  }
+  for (const d of decisions) {
+    console.log(`${d.record ? 'Record' : 'Leave '} ${d.tag}: ${d.reason}`);
   }
 
-  await sql`create schema if not exists drizzle`;
-  await sql`create table if not exists drizzle.__drizzle_migrations (
-    id serial primary key,
-    hash text not null,
-    created_at bigint
-  )`;
-
-  const applied = await sql`select created_at from drizzle.__drizzle_migrations`;
-  const appliedAt = new Set(applied.map((r) => String(r.created_at)));
-
-  let inserted = 0;
-  for (const entry of journal.entries) {
-    if (appliedAt.has(String(entry.when))) continue;
-    const file = readFileSync(join(drizzleDir, `${entry.tag}.sql`), 'utf8');
-    const hash = createHash('sha256').update(file).digest('hex');
-    await sql`insert into drizzle.__drizzle_migrations (hash, created_at)
-              values (${hash}, ${entry.when})`;
-    inserted += 1;
-    console.log(`Baselined ${entry.tag} (when=${String(entry.when)})`);
+  const toRecord = decisions.filter((d) => d.record);
+  if (toRecord.length === 0) {
+    console.log('Nothing to baseline — drizzle-kit will apply whatever is not recorded.');
+  } else {
+    await sql.begin(async (tx) => {
+      await tx`create schema if not exists drizzle`;
+      await tx`create table if not exists drizzle.__drizzle_migrations (
+        id serial primary key,
+        hash text not null,
+        created_at bigint
+      )`;
+      for (const d of toRecord) {
+        const hash = createHash('sha256').update(sqlByTag.get(d.tag)).digest('hex');
+        await tx`insert into drizzle.__drizzle_migrations (hash, created_at)
+                 values (${hash}, ${d.when})`;
+      }
+    });
+    console.log(`Baseline complete: ${String(toRecord.length)} entries recorded.`);
   }
-  console.log(
-    inserted === 0
-      ? 'Ledger already consistent — nothing to baseline.'
-      : `Baseline complete: ${String(inserted)} entries recorded.`,
-  );
 } finally {
   await sql.end();
 }
