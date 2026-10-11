@@ -4,9 +4,10 @@ import { drizzle, type PostgresJsQueryResultHKT } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres';
 import * as schema from './schema/index.js';
 
-export function createDb(connectionString: string) {
+/** `max` is how many connections may be open at once; with one, every request waits for the one before it. */
+export function createDb(connectionString: string, options: { max?: number } = {}) {
   const client = postgres(connectionString, {
-    max: 1,
+    max: options.max ?? 10,
     prepare: false,
   });
   const db = drizzle(client, { schema });
