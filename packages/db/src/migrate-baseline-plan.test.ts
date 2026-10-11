@@ -50,6 +50,7 @@ const recorded = (decisions: ReturnType<typeof plan>) =>
   decisions.filter((d) => d.record).map((d) => d.tag);
 
 const allTags = journal.entries.map((e) => e.tag);
+const lastTag = allTags.at(-1) ?? '';
 
 describe('migrate-baseline plan', () => {
   it('records only 0000 and 0001 even when every later migration was applied by hand', () => {
@@ -102,18 +103,13 @@ describe('migrate-baseline plan', () => {
   it('is idempotent: once the ledger reaches 0001 it records nothing more', () => {
     const decisions = plan(catalogWith(allTags), whenOf('0001_audit_hardening'));
     expect(recorded(decisions)).toEqual([]);
-    expect(decisions.map((d) => d.tag)).toEqual([
-      '0002_user_tier',
-      '0003_scan_job_owner',
-      '0004_org_rls',
-      '0005_membership_unique',
-    ]);
+    expect(decisions.map((d) => d.tag)).toEqual(allTags.slice(allTags.indexOf('0002_user_tier')));
   });
 
   it('only adds what is newer than the ledger, never rows drizzle-kit already skips', () => {
     const fromZero = plan(catalogWith(allTags), whenOf('0000_modern_zodiak'));
     expect(recorded(fromZero)).toEqual(['0001_audit_hardening']);
-    expect(plan(catalogWith(allTags), whenOf('0005_membership_unique'))).toEqual([]);
+    expect(plan(catalogWith(allTags), whenOf(lastTag))).toEqual([]);
   });
 
   it('checks every table and constraint 0000 creates', () => {
