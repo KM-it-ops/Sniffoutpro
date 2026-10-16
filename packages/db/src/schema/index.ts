@@ -9,12 +9,15 @@ import {
   real,
   index,
   uniqueIndex,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 
 export const organizations = pgTable('organizations', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
   slug: text('slug').notNull().unique(),
+  // Only this person may make themselves the first admin (migration 0010). Empty for organizations made before it.
+  createdBy: uuid('created_by').references((): AnyPgColumn => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
